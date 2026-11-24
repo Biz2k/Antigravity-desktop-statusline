@@ -1,0 +1,38 @@
+{
+  "name": "antigravity-desktop-statusline",
+  "version": "1.0.0",
+  "description": "Compact statusline band above the chat prompt in Google AntiGravity 2.0 Desktop — live context window meter, prompt cache hit rate, 5-hour & weekly usage meters with Settings quota sync, zero npm dependencies.",
+  "keywords": [
+    "google-antigravity",
+    "antigravity",
+    "antigravity-2",
+    "statusline",
+    "status-bar",
+    "context-window",
+    "token-usage",
+    "quota",
+    "mcp-server",
+    "electron"
+  ],
+  "homepage": "https://github.com/Biz2k/Antigravity-desktop-statusline#readme",
+  "bugs": {
+    "url": "https://github.com/Biz2k/Antigravity-desktop-statusline/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Biz2k/Antigravity-desktop-statusline.git"
+  },
+  "license": "MIT",
+  "author": "Biz2k",
+  "type": "module",
+  "main": "server.mjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "standalone": "node server.mjs --standalone",
+    "install:app": "node install.cjs",
+    "uninstall:app": "node uninstall.cjs"
+  }
+}

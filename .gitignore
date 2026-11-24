@@ -1,0 +1,12 @@
+# Runtime user state & logs
+config.json
+state.json
+statusline.log
+uninstalling.lock
+
+# Node & OS artifacts
+node_modules/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
