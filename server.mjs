@@ -22,13 +22,22 @@ const LOG_FILE = path.join(__dirname, 'statusline.log');
 const FEATURES_V2_DIR = path.join(USER_HOME, '.antigravity-features-v2');
 const FEATURES_V2_BUNDLE = path.join(FEATURES_V2_DIR, 'localization_injected.js');
 
+const DEFAULT_THRESHOLDS = {
+  context: { warn: 80, danger: 95 },
+  cache: { warn: 50, danger: 20 },
+  fiveHour: { warn: 80, danger: 95 },
+  weekly: { warn: 80, danger: 95 },
+};
+
 const DEFAULT_CONFIG = {
   enabled: true,
+  lang: 'en',
   collapsed: false,
   showCache: true,
-  showSecondRow: true,
+  showFirstRow: true,
   fiveHourBudgetTokens: 1_500_000,
   weeklyBudgetTokens: 15_000_000,
+  thresholds: DEFAULT_THRESHOLDS,
   modelWindows: {
     'gemini-4-neon': 512_000,
     'gemini-4-carbon': 1_000_000,
@@ -74,11 +83,42 @@ function writeJsonSafe(filePath, obj) {
   }
 }
 
+function sanitizeThresholds(raw) {
+  const clamp = (v, fb) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fb;
+  };
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const asc = (key) => {
+    const d = DEFAULT_THRESHOLDS[key];
+    const s = src[key] && typeof src[key] === 'object' ? src[key] : {};
+    let warn = clamp(s.warn, d.warn);
+    let danger = clamp(s.danger, d.danger);
+    if (warn > danger) warn = danger;
+    return { warn, danger };
+  };
+  const desc = (key) => {
+    const d = DEFAULT_THRESHOLDS[key];
+    const s = src[key] && typeof src[key] === 'object' ? src[key] : {};
+    let warn = clamp(s.warn, d.warn);
+    let danger = clamp(s.danger, d.danger);
+    if (danger > warn) danger = warn;
+    return { warn, danger };
+  };
+  return {
+    context: asc('context'),
+    cache: desc('cache'),
+    fiveHour: asc('fiveHour'),
+    weekly: asc('weekly'),
+  };
+}
+
 function getConfig() {
   const saved = readJsonSafe(CONFIG_FILE, {});
   return {
     ...DEFAULT_CONFIG,
     ...saved,
+    thresholds: sanitizeThresholds(saved.thresholds),
     modelWindows: {
       ...DEFAULT_CONFIG.modelWindows,
       ...(saved.modelWindows || {}),
@@ -91,6 +131,16 @@ function saveConfig(patch) {
   const next = {
     ...current,
     ...patch,
+    thresholds: sanitizeThresholds(
+      patch.thresholds
+        ? {
+            context: { ...current.thresholds.context, ...(patch.thresholds.context || {}) },
+            cache: { ...current.thresholds.cache, ...(patch.thresholds.cache || {}) },
+            fiveHour: { ...current.thresholds.fiveHour, ...(patch.thresholds.fiveHour || {}) },
+            weekly: { ...current.thresholds.weekly, ...(patch.thresholds.weekly || {}) },
+          }
+        : current.thresholds
+    ),
     modelWindows: {
       ...current.modelWindows,
       ...(patch.modelWindows || {}),
@@ -406,17 +456,17 @@ function collectAllMetrics(requestedConvId) {
 
   return {
     now,
-    version: '1.0.0',
+    version: '1.1.0',
     context,
     localUsage,
     officialQuotas,
     config: {
       enabled: cfg.enabled !== false,
+      lang: ['en', 'ru', 'uk'].includes(cfg.lang) ? cfg.lang : 'en',
       collapsed: !!cfg.collapsed,
       showCache: cfg.showCache !== false,
-      showSecondRow: cfg.showSecondRow !== false,
-      fiveHourBudgetTokens: budget5h,
-      weeklyBudgetTokens: budget7d,
+      showFirstRow: cfg.showFirstRow !== false,
+      thresholds: sanitizeThresholds(cfg.thresholds),
     },
   };
 }
@@ -487,6 +537,7 @@ function startHttpServer() {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Widget-Hash, Content-Length');
     res.setHeader('Cache-Control', 'no-store');
 
     if (req.method === 'OPTIONS') {
@@ -501,7 +552,7 @@ function startHttpServer() {
     if (pathname === '/health') {
       const w = getWidgetPayload();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, version: '1.0.0', widgetHash: w ? w.hash : null }));
+      res.end(JSON.stringify({ ok: true, version: '1.1.0', widgetHash: w ? w.hash : null }));
       return;
     }
 
@@ -641,7 +692,7 @@ function startMcpStdio() {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'antigravity-statusline', version: '1.0.0' },
+          serverInfo: { name: 'antigravity-statusline', version: '1.1.0' },
         },
       });
       return;

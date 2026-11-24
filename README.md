@@ -2,7 +2,7 @@
 
 🌐 **🇬🇧 English** | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.uk.md)
 
-[![Version](https://img.shields.io/badge/version-v1.0.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-v1.1.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -30,7 +30,7 @@
    - Pure Node.js ESM (`>= 18`) — **zero `npm` packages required**.
    - Runs as a lightweight MCP stdio server (`antigravity-statusline`, exposing `get_statusline_metrics`) + local HTTP server on `127.0.0.1:39229`.
    - Edits to `widget.js` hot-reload into the open AntiGravity window within seconds without restarting the app.
-   - Adapts automatically to **Dark / Light** themes and **`EN | RU`** language toggle (`antigravity-features-v2`).
+   - Adapts automatically to **Dark / Light** themes and includes a built-in **`EN | RU | UA`** language switcher (**English** by default).
    - Hover controls in the top-right corner of the band: **Refresh (`↻`)**, **Collapse (`▾`)**, and **Settings (`⚙`)**.
 
 ---
@@ -69,11 +69,11 @@ Click the **`⚙`** icon on hover in the top-right corner of the statusline band
 | Option | Default | Description |
 | :--- | :--- | :--- |
 | `enabled` | `true` | Show or hide the statusline band |
+| `lang` | `"en"` | UI language: `"en"` (default), `"ru"`, or `"uk"` (`EN \| RU \| UA` in `⚙` settings) |
 | `collapsed` | `false` | Compact single-line summary mode |
 | `showCache` | `true` | Display prompt cache hit percentage (`cache XX%`) |
-| `showSecondRow` | `true` | Show or hide the 5-hour & weekly meters row |
-| `fiveHourBudgetTokens` | `1500000` | Reference 5-hour token budget for local fallback mode |
-| `weeklyBudgetTokens` | `15000000` | Reference 7-day token budget for local fallback mode |
+| `showFirstRow` | `true` | Show or hide the 1st row (`Context` meter) |
+| `thresholds` | `80/95`, cache `50/20` | Custom yellow/red color thresholds (%) for `context`, `cache` (`<`), `fiveHour`, and `weekly` |
 
 ---
 

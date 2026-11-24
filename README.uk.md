@@ -2,7 +2,7 @@
 
 🌐 [🇬🇧 English](README.md) | [🇷🇺 Русский](README.ru.md) | **🇺🇦 Українська**
 
-[![Version](https://img.shields.io/badge/version-v1.0.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-v1.1.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -30,7 +30,7 @@
    - Чистий Node.js ESM (`>= 18`) — **не потребує `npm install`**.
    - Працює як легкий фоновий MCP-сервер (`antigravity-statusline` з інструментом `get_statusline_metrics`) + локальний HTTP-сервер на `127.0.0.1:39229`.
    - Будь-які зміни у `widget.js` застосовуються у відкритому вікні AntiGravity за кілька секунд без перезапуску програми.
-   - Автоматично підлаштовується під **темну / світлу тему** та перемикач мови **`EN | RU`** (`antigravity-features-v2`).
+   - Автоматично підлаштовується під **темну / світлу тему** та має вбудований перемикач мови **`EN | RU | UA`** (за замовчуванням — **англійська**).
    - При наведенні праворуч з'являються міні-кнопки: **Оновити (`↻`)**, **Згорнути (`▾`)** та **Налаштування (`⚙`)**.
 
 ---
@@ -69,11 +69,11 @@ node ~/.antigravity-statusline/install.cjs
 | Параметр | За замовчуванням | Опис |
 | :--- | :--- | :--- |
 | `enabled` | `true` | Увімкнути / приховати панель статусу |
+| `lang` | `"en"` | Мова інтерфейсу: `"en"` (за замовчуванням), `"ru"` або `"uk"` (`EN \| RU \| UA` у налаштуваннях `⚙`) |
 | `collapsed` | `false` | Компактний однорядковий режим |
 | `showCache` | `true` | Показувати відсоток влучань у кеш (`кеш XX%`) |
-| `showSecondRow` | `true` | Показувати або приховувати другий рядок (5 годин / тиждень) |
-| `fiveHourBudgetTokens` | `1500000` | Орієнтовний 5-годинний бюджет токенів (для локального режиму) |
-| `weeklyBudgetTokens` | `15000000` | Орієнтовний 7-денний бюджет токенів (для локального режиму) |
+| `showFirstRow` | `true` | Показувати або приховувати 1-й рядок (`Контекст`) |
+| `thresholds` | `80/95`, кеш `50/20` | Пороги зміни кольору (жовтий / червоний, %) для `context`, `cache` (`<`), `fiveHour` і `weekly` |
 
 ---
 
