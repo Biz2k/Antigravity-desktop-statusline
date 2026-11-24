@@ -10,7 +10,7 @@
 
 **Компактна панель статусу безпосередньо над полем введення чату в Google AntiGravity 2.0 Desktop** — натхненна плагіном `desktop-statusline` для Claude Code, без жодної зовнішньої npm-залежності.
 
-![Прев'ю Antigravity Desktop Statusline — Український інтерфейс](assets/preview-uk.png)
+![Прев'ю Antigravity Desktop Statusline — Український інтерфейс](assets/preview-ua.png)
 
 ---
 
@@ -40,7 +40,7 @@
 
 Натисніть іконку **`⚙`** при наведенні на правий край панелі, щоб перемкнути мову (`EN | RU | UA`), задати індивідуальні пороги кольору (**Жовтий / Червоний** — застосовуються одразу під час редагування) або приховати/показати 1-й рядок (`Контекст`):
 
-![Вікно налаштувань Antigravity Desktop Statusline (UA)](assets/settings-uk.png)
+![Вікно налаштувань Antigravity Desktop Statusline (UA)](assets/settings-ua.png)
 
 Усі параметри автоматично зберігаються у `~/.antigravity-statusline/config.json`:
 
