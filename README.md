@@ -10,7 +10,7 @@
 
 **A sleek, zero-dependency statusline band right above the chat prompt in Google AntiGravity 2.0 Desktop** — inspired by Claude Code's `desktop-statusline`.
 
-![Antigravity Desktop Statusline preview](assets/preview.png)
+![Antigravity Desktop Statusline — English UI](assets/preview-en.png)
 
 ---
 
@@ -19,19 +19,39 @@
 1. **Live Context Window Meter (`Context`)**
    - Reads the active conversation's local transcript (`~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`) in real time with `mtime` + `size` caching.
    - Displays exact tokens used vs. model context window (`512K` for Gemini 4 Neon, `1M` for Gemini 4 Carbon / Argon / Hydrogen / Gemini 3.x / Claude 5.5, `200K` for Claude 4.6, `128K` for GPT-OSS).
-   - Displays live **prompt cache hit rate** (e.g. `cache 99%`, amber warning below `50%`) and automatic **compaction counter** when context shrinks.
-   - Color-coded progress bars: **blue** (`< 80%`), **amber** (`80%–94%`), **red** (`≥ 95%`).
+   - Displays live **prompt cache hit rate** (`cache 99%`) and automatic **compaction counter** when context shrinks.
+   - Optional **Hide 1st row (`Context`)** toggle if you only want to track 5-hour & weekly limits.
 
 2. **5-Hour & Weekly Usage Meters (`5 hours` / `Weekly`)**
-   - **Official Quota Auto-Sync**: whenever you open **Settings → Models**, the widget passively reads the official remaining 5-hour & weekly limits (both English & Russian UI), converts them to used `%`, persists them locally, and renders live reset countdowns (`↻ 4h 34m (03:38)`, `↻ 6d 22h`).
-   - **Local Rolling Fallback**: before your first visit to **Settings → Models** (or after a reset window expires), automatically displays rolling 5-hour and 7-day token consumption aggregated across all local conversations against configurable budgets.
+   - Automatically syncs plan limits (`5 hours` & `Weekly`), converts remaining `%` to used `%`, and displays live reset countdowns (`↻ 3h 42m (04:08)`, `↻ 6d 22h`).
+   - **Dynamic Equal-Width Bars**: `ResizeObserver`-driven layout keeps the `5 hours` and `Weekly` bars identical in length while smoothly resizing with the window and stacking only on narrow screens.
+   - Customizable **Yellow / Red color thresholds** for every indicator (**Context**, **Cache (`<`)**, **5 hours**, **Weekly**).
 
-3. **Zero Dependencies & Live Hot-Reload**
+3. **Zero Dependencies, Shadow DOM & Live Hot-Reload**
    - Pure Node.js ESM (`>= 18`) — **zero `npm` packages required**.
    - Runs as a lightweight MCP stdio server (`antigravity-statusline`, exposing `get_statusline_metrics`) + local HTTP server on `127.0.0.1:39229`.
-   - Edits to `widget.js` hot-reload into the open AntiGravity window within seconds without restarting the app.
-   - Adapts automatically to **Dark / Light** themes and includes a built-in **`EN | RU | UA`** language switcher (**English** by default).
+   - Isolated inside **Shadow DOM** so external DOM translators (e.g. `antigravity-features-v2`) never override statusline labels while all AntiGravity Dark/Light theme variables inherit automatically.
+   - Built-in **`EN | RU | UA`** language switcher (**English** by default) and instant-apply settings.
    - Hover controls in the top-right corner of the band: **Refresh (`↻`)**, **Collapse (`▾`)**, and **Settings (`⚙`)**.
+
+---
+
+## ⚙️ Settings Popover (`⚙`)
+
+Click **`⚙`** on hover in the top-right corner of the statusline band to switch languages (`EN | RU | UA`), configure individual **Yellow / Red** color thresholds (applied immediately as you edit), or hide/show the 1st row (`Context`):
+
+![Antigravity Desktop Statusline — Settings (EN)](assets/settings-en.png)
+
+All preferences are saved automatically to `~/.antigravity-statusline/config.json`:
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `enabled` | `true` | Show or hide the statusline band |
+| `lang` | `"en"` | UI language: `"en"` (default), `"ru"`, or `"uk"` (`EN \| RU \| UA`) |
+| `collapsed` | `false` | Compact single-line summary mode |
+| `showCache` | `true` | Display prompt cache hit percentage (`cache XX%`) |
+| `showFirstRow` | `true` | Show or hide the 1st row (`Context` meter) |
+| `thresholds` | `80/95`, cache `50/20` | Per-metric Yellow/Red color thresholds (%) for `context`, `cache` (`<`), `fiveHour`, and `weekly` |
 
 ---
 
@@ -40,7 +60,7 @@
 ### Prerequisites
 - **Node.js 18+** ([nodejs.org](https://nodejs.org/))
 - **Google AntiGravity 2.0 Desktop**
-- Recommended: [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) installed (provides seamless Electron DOM injection & auto-reload; the statusline loader also auto-reattaches after `antigravity-features-v2` updates).
+- Recommended: [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) installed (provides seamless Electron DOM injection & hot-reload; the statusline loader also auto-reattaches after `antigravity-features-v2` updates).
 
 ### Windows (PowerShell — 1-line)
 ```powershell
@@ -58,22 +78,7 @@ git clone https://github.com/Biz2k/Antigravity-desktop-statusline.git ~/.antigra
 node ~/.antigravity-statusline/install.cjs
 ```
 
-Then **restart AntiGravity** (including exiting from the system tray). To sync official 5-hour & weekly plan limits, open **Settings → Models** once.
-
----
-
-## ⚙️ Configuration
-
-Click the **`⚙`** icon on hover in the top-right corner of the statusline band, or edit `~/.antigravity-statusline/config.json`:
-
-| Option | Default | Description |
-| :--- | :--- | :--- |
-| `enabled` | `true` | Show or hide the statusline band |
-| `lang` | `"en"` | UI language: `"en"` (default), `"ru"`, or `"uk"` (`EN \| RU \| UA` in `⚙` settings) |
-| `collapsed` | `false` | Compact single-line summary mode |
-| `showCache` | `true` | Display prompt cache hit percentage (`cache XX%`) |
-| `showFirstRow` | `true` | Show or hide the 1st row (`Context` meter) |
-| `thresholds` | `80/95`, cache `50/20` | Custom yellow/red color thresholds (%) for `context`, `cache` (`<`), `fiveHour`, and `weekly` |
+Then **restart AntiGravity** (including exiting from the system tray).
 
 ---
 
@@ -82,8 +87,8 @@ Click the **`⚙`** icon on hover in the top-right corner of the statusline band
 | File | Purpose |
 | :--- | :--- |
 | [`server.mjs`](server.mjs) | Zero-dependency MCP stdio server (`get_statusline_metrics`) + local HTTP API (`http://127.0.0.1:39229`) + transcript analyzer + self-healing loader guard |
-| [`widget.js`](widget.js) | Hot-reloadable DOM widget rendered directly above the AntiGravity prompt composer + passive Settings → Models quota observer |
-| [`loader.js`](loader.js) | Lightweight top-shell-only loader that pulls `widget.js` with `X-Widget-Hash` hot-reload |
+| [`widget.js`](widget.js) | Shadow DOM hot-reloadable widget rendered above the AntiGravity prompt composer + responsive `ResizeObserver` bars + instant-apply settings popover |
+| [`loader.js`](loader.js) | Lightweight top-shell-only loader that polls `/health` (`widgetHash`) and defers hot-reloads while settings are open |
 | [`install.cjs`](install.cjs) | Cross-platform installer (registers MCP configs + attaches loader) |
 | [`install.ps1`](install.ps1) / [`install.sh`](install.sh) | One-line installers for Windows and macOS/Linux |
 | [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) | Clean uninstaller (removes MCP registration, strips loader, cleans directory) |
@@ -93,7 +98,7 @@ Click the **`⚙`** icon on hover in the top-right corner of the statusline band
 ## 🔒 Privacy & Local-Only Design
 
 - **Zero external network calls** — everything runs strictly on `127.0.0.1:39229` and reads only your local transcript files (`~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl`).
-- **No credentials or tokens read** — official quotas are captured passively from what AntiGravity already displays in **Settings → Models**.
+- **No credentials or tokens read** — quotas are read passively from AntiGravity's own UI state.
 - **Isolated to the AntiGravity shell** — never injects into guest browser tabs or webviews.
 
 ---
