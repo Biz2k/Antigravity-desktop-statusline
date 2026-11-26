@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   APP_VERSION,
+  SUPPORTED_LANGS,
   DEFAULT_THRESHOLDS,
   DEFAULT_CONFIG,
   TRANSCRIPT_CACHE_MAX,
@@ -22,6 +23,7 @@ import {
   clearTranscriptCache,
   collectUsageSummary,
   parseDaemonQuotaSummary,
+  parseDaemonPlan,
   syncQuotasFromLocalDaemon,
   createHttpServer,
 } from '../server.mjs';
@@ -31,6 +33,15 @@ const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'
 
 test('APP_VERSION matches package.json version', () => {
   assert.equal(APP_VERSION, pkg.version);
+});
+
+test('SUPPORTED_LANGS in server.mjs stay in sync with widget.js I18N and lang buttons', () => {
+  const widgetSrc = fs.readFileSync(path.join(__dirname, '..', 'widget.js'), 'utf8');
+  assert.deepEqual(SUPPORTED_LANGS, ['en', 'de', 'fr', 'zh', 'ru', 'uk']);
+  for (const code of SUPPORTED_LANGS) {
+    assert.match(widgetSrc, new RegExp(`\\b${code}:\\s*\\{`), `widget.js I18N missing "${code}"`);
+    assert.match(widgetSrc, new RegExp(`data-lang="${code}"`), `widget.js popover missing button for "${code}"`);
+  }
 });
 
 test('sanitizeThresholds returns defaults for empty or invalid input', () => {
@@ -186,6 +197,61 @@ test('parseTranscriptFile does not flag small prompt drops as compaction and ret
     fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf8');
     const parsed = parseTranscriptFile(filePath, '22222222-2222-2222-2222-222222222222');
     assert.equal(parsed.compactions, null);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('parseTranscriptFile updates context immediately on CHECKPOINT without double-counting compaction', () => {
+  clearTranscriptCache();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-ckpt-'));
+  const filePath = path.join(tmpDir, 'transcript.jsonl');
+  try {
+    const initial = [
+      JSON.stringify({
+        type: 'PLANNER_RESPONSE',
+        step_index: 10,
+        created_at: '2026-11-26T17:55:25Z',
+        model: 'gemini-4-neon-medium',
+        input_tokens: 2410,
+        cache_read_tokens: 282656,
+        output_tokens: 239,
+      }),
+      JSON.stringify({
+        type: 'CHECKPOINT',
+        step_index: 11,
+        created_at: '2026-11-26T17:56:27Z',
+        input_tokens: 3199,
+        cache_read_tokens: 283017,
+        output_tokens: 2585,
+        content: '# Resuming from a compaction',
+      }),
+    ];
+    fs.writeFileSync(filePath, initial.join('\n') + '\n', 'utf8');
+
+    const afterCkpt = parseTranscriptFile(filePath, '33333333-3333-3333-3333-333333333333');
+    assert.equal(afterCkpt.lastPlanner.model, 'gemini-4-neon-medium');
+    assert.equal(afterCkpt.lastPlanner.contextTotal, 2585);
+    assert.equal(afterCkpt.lastPlanner.cacheReadTokens, 0);
+    assert.deepEqual(afterCkpt.compactions, { count: 1, before: 286216, after: 2585 });
+
+    // Next PLANNER_RESPONSE updates real post-compaction context without incrementing count again
+    fs.appendFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'PLANNER_RESPONSE',
+        step_index: 12,
+        created_at: '2026-11-26T17:58:59Z',
+        model: 'gemini-4-neon-medium',
+        input_tokens: 22352,
+        cache_read_tokens: 0,
+        output_tokens: 507,
+      }) + '\n',
+      'utf8'
+    );
+    const afterNext = parseTranscriptFile(filePath, '33333333-3333-3333-3333-333333333333');
+    assert.equal(afterNext.lastPlanner.contextTotal, 22859);
+    assert.deepEqual(afterNext.compactions, { count: 1, before: 286216, after: 22352 });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -515,6 +581,7 @@ test('HTTP server serves SSE /api/events and /api/usage-summary with Origin prot
     assert.equal(sum.days, 3);
     assert.ok(sum.total && sum.byModel && sum.byDay);
   } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
 });
@@ -546,17 +613,52 @@ test('parseDaemonQuotaSummary extracts Gemini 5h and weekly buckets accurately',
   assert.equal(parseDaemonQuotaSummary({ response: { groups: [] } }), null);
 });
 
-test('syncQuotasFromLocalDaemon reads hub_*.json and fetches RetrieveUserQuotaSummary from mock daemon', async () => {
+test('parseDaemonPlan extracts short plan name and label without email', () => {
+  assert.deepEqual(
+    parseDaemonPlan({
+      userStatus: {
+        email: 'secret@example.com',
+        userTier: { name: 'Google AI Pro' },
+        planStatus: { planInfo: { planName: 'Pro' } },
+      },
+    }),
+    { short: 'Pro', label: 'Google AI Pro' }
+  );
+  assert.deepEqual(
+    parseDaemonPlan({
+      userStatus: {
+        userTier: { name: 'Google AI Ultra' },
+      },
+    }),
+    { short: 'Ultra', label: 'Google AI Ultra' }
+  );
+  assert.equal(parseDaemonPlan({ userStatus: {} }), null);
+  assert.equal(parseDaemonPlan(null), null);
+});
+
+test('syncQuotasFromLocalDaemon reads hub_*.json and fetches RetrieveUserQuotaSummary and GetUserStatus from mock daemon', async () => {
   const httpMod = await import('node:http');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-daemon-'));
   const expectedCsrf = 'test-csrf-token-123';
-  let receivedPath = '';
+  const receivedPaths = [];
   let receivedCsrf = '';
 
   const mockDaemon = httpMod.default.createServer((req, res) => {
-    receivedPath = req.url;
+    receivedPaths.push(req.url);
     receivedCsrf = req.headers['x-codeium-csrf-token'];
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url.endsWith('/GetUserStatus')) {
+      res.end(
+        JSON.stringify({
+          userStatus: {
+            email: 'hidden@example.com',
+            userTier: { name: 'Google AI Pro' },
+            planStatus: { planInfo: { planName: 'Pro' } },
+          },
+        })
+      );
+      return;
+    }
     res.end(
       JSON.stringify({
         response: {
@@ -586,11 +688,14 @@ test('syncQuotasFromLocalDaemon reads hub_*.json and fetches RetrieveUserQuotaSu
 
     const res = await syncQuotasFromLocalDaemon({ force: true, daemonDir: tmpDir, persist: false });
     assert.equal(res.ok, true);
-    assert.equal(receivedPath, '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary');
+    assert.ok(receivedPaths.includes('/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'));
+    assert.ok(receivedPaths.includes('/exa.language_server_pb.LanguageServerService/GetUserStatus'));
     assert.equal(receivedCsrf, expectedCsrf);
     assert.equal(res.officialQuotas.source, 'ide-daemon');
     assert.equal(res.officialQuotas.fiveHour.percent, 40);
     assert.equal(res.officialQuotas.weekly.percent, 10);
+    assert.deepEqual(res.plan, { short: 'Pro', label: 'Google AI Pro' });
+    assert.equal('email' in res.plan, false);
   } finally {
     await new Promise((resolve) => mockDaemon.close(resolve));
     fs.rmSync(tmpDir, { recursive: true, force: true });

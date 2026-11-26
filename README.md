@@ -2,7 +2,7 @@
 
 🌐 **🇬🇧 English** | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.ua.md)
 
-[![Version](https://img.shields.io/badge/version-v1.3.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.3.0)
+[![Version](https://img.shields.io/badge/version-v1.4.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.4.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -19,8 +19,8 @@
 1. **Live Context Window Meter (`Context`)**
    - Reads the active conversation's local transcript (`~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`) in real time with `mtime` + `size` caching.
    - Displays exact tokens used vs. model context window (`512K` for Gemini 4 Neon, `1M` for Gemini 4 Carbon / Argon / Hydrogen / Gemini 3.x / Claude 5.5, `200K` for Claude 4.6, `128K` for GPT-OSS).
-   - Displays live **prompt cache hit rate** (`cache 99%`), optional compact **model badge** (`Neon`, `Opus 4.6`, etc.), automatic **compaction counter**, soft **`/compact` hint** when context is high, and active **parallel/subagent session indicator** (`+N`).
-   - Optional **Hide 1st row (`Context`)** toggle if you only want to track 5-hour & weekly limits.
+   - Displays automatic **compaction counter** (with instant reset on `CHECKPOINT`), always-visible clickable **`/compact`** button (triggers AntiGravity's `/compact` slash command directly, or copies it if you have an unsent draft), live **prompt cache hit rate** (`cache 99%`), optional compact **model badge** (hidden by default), **plan tier badge** (`Pro` / `Ultra` / `Free`, no email read or stored), and active **parallel/subagent session indicator** (`+N`).
+   - Every element in both rows can be individually shown or hidden in Settings.
 
 2. **5-Hour & Weekly Usage Meters (`5 hours` / `Weekly`)**
    - Automatically syncs plan limits (`5 hours` & `Weekly`) directly from AntiGravity's local IDE daemon (`~/.gemini/antigravity/daemon/hub_*.json`) every 90s and on `↻ Refresh` — **no need to open Settings → Models** — displays live reset countdowns (`↻ 3h 42m (04:08)`, `↻ 6d 22h`), and shows **burn rate & ETA forecast** in the 5-hour tooltip.
@@ -31,14 +31,14 @@
    - Pure Node.js ESM/CJS (`>= 18`) — **zero `npm` packages required**, **no third-party mods required** (built-in zero-dependency `app.asar` patcher with backup & SHA-256 integrity recalculation; also coexists seamlessly if `antigravity-features-v2` is installed).
    - Runs as a lightweight MCP stdio server (`antigravity-statusline`, exposing `get_statusline_metrics` and `get_usage_summary`) + local HTTP/SSE server on `127.0.0.1:39229` with `fs.watch` live push updates.
    - Isolated inside **Shadow DOM** so external DOM translators (e.g. `antigravity-features-v2`) never override statusline labels while all AntiGravity Dark/Light theme variables inherit automatically.
-   - Built-in **`EN | RU | UA`** language switcher (**English** by default) and instant-apply settings.
+   - Built-in **`EN | DE | FR | ZH | RU | UA`** language switcher (**English** by default) and instant-apply settings.
    - Hover controls in the top-right corner of the band: **Refresh (`↻`)**, **Collapse (`▾`)**, and **Settings (`⚙`)**.
 
 ---
 
 ## ⚙️ Settings Popover (`⚙`)
 
-Click **`⚙`** on hover in the top-right corner of the statusline band to switch languages (`EN | RU | UA`), configure individual **Yellow / Red** color thresholds (applied immediately as you edit), reset thresholds to defaults, toggle prompt cache display (`showCache`), hide/show the 1st row (`Context`), and view quota sync status:
+Click **`⚙`** on hover in the top-right corner of the statusline band to switch languages (`EN | DE | FR | ZH | RU | UA`), toggle visibility of every element in the **Show / Hide** section (`Context`, `Compacts`, `/compact`, `Cache`, `Model`, `Plan`, `5 hours`, `Weekly`), configure individual **Yellow / Red** color thresholds (applied immediately as you edit), reset thresholds to defaults, and view quota sync status:
 
 ![Antigravity Desktop Statusline — Settings (EN)](assets/settings-en.png)
 
@@ -47,11 +47,16 @@ All preferences are saved automatically to `~/.antigravity-statusline/config.jso
 | Option | Default | Description |
 | :--- | :--- | :--- |
 | `enabled` | `true` | Show or hide the statusline band |
-| `lang` | `"en"` | UI language: `"en"` (default), `"ru"`, or `"uk"` (`EN \| RU \| UA`) |
+| `lang` | `"en"` | UI language: `"en"`, `"de"`, `"fr"`, `"zh"`, `"ru"`, or `"uk"` (`EN \| DE \| FR \| ZH \| RU \| UA`) |
 | `collapsed` | `false` | Compact single-line summary mode |
-| `showCache` | `true` | Display prompt cache hit percentage (`cache XX%`) |
 | `showFirstRow` | `true` | Show or hide the 1st row (`Context` meter) |
-| `showModelBadge` | `true` | Show or hide the compact active model badge (`Neon`, `Opus 4.6`, etc.) |
+| `showCompacts` | `true` | Show or hide the compaction counter |
+| `showCompactBtn` | `true` | Show or hide the clickable `/compact` button |
+| `showCache` | `true` | Display prompt cache hit percentage (`cache XX%`) |
+| `showModelBadge` | `false` | Show or hide the compact active model badge (`Neon`, `Opus 4.6`, etc.) |
+| `showPlanBadge` | `true` | Show or hide the subscription plan badge (`Pro`, `Ultra`, `Free`) |
+| `showFiveHour` | `true` | Show or hide the `5 hours` limit meter |
+| `showWeekly` | `true` | Show or hide the `Weekly` limit meter |
 | `thresholds` | `80/95`, cache `50/20` | Per-metric Yellow/Red color thresholds (%) for `context`, `cache` (`<`), `fiveHour`, and `weekly` |
 
 ---

@@ -34,6 +34,8 @@ const LOG_FILE = path.join(__dirname, 'statusline.log');
 const FEATURES_V2_DIR = path.join(USER_HOME, '.antigravity-features-v2');
 const FEATURES_V2_BUNDLE = path.join(FEATURES_V2_DIR, 'localization_injected.js');
 
+const SUPPORTED_LANGS = ['en', 'de', 'fr', 'zh', 'ru', 'uk'];
+
 const DEFAULT_THRESHOLDS = {
   context: { warn: 80, danger: 95 },
   cache: { warn: 50, danger: 20 },
@@ -47,7 +49,12 @@ const DEFAULT_CONFIG = {
   collapsed: false,
   showCache: true,
   showFirstRow: true,
-  showModelBadge: true,
+  showModelBadge: false,
+  showPlanBadge: true,
+  showCompacts: true,
+  showCompactBtn: true,
+  showFiveHour: true,
+  showWeekly: true,
   fiveHourBudgetTokens: 1_500_000,
   weeklyBudgetTokens: 15_000_000,
   thresholds: DEFAULT_THRESHOLDS,
@@ -241,6 +248,7 @@ function createParserState() {
     turns: 0,
     lastPlanner: null,
     prevPromptTotal: null,
+    pendingCheckpoint: false,
     compactionsCount: 0,
     lastCompactionBefore: null,
     lastCompactionAfter: null,
@@ -253,7 +261,8 @@ function applyTranscriptLine(state, line, fallbackMtimeMs) {
   // Fast pre-check before JSON.parse on multi-MB transcripts
   const isPlanner = line.includes('"PLANNER_RESPONSE"');
   const isUser = !isPlanner && line.includes('"USER_INPUT"');
-  if (!isPlanner && !isUser) return;
+  const isCheckpoint = !isPlanner && !isUser && line.includes('"CHECKPOINT"');
+  if (!isPlanner && !isUser && !isCheckpoint) return;
 
   let obj;
   try {
@@ -272,6 +281,56 @@ function applyTranscriptLine(state, line, fallbackMtimeMs) {
     return;
   }
 
+  if (obj.type === 'CHECKPOINT') {
+    const inputTokens = Number(obj.input_tokens) || 0;
+    const cacheReadTokens = Number(obj.cache_read_tokens) || 0;
+    const outputTokens = Number(obj.output_tokens) || 0;
+    const beforeTokens =
+      inputTokens + cacheReadTokens > 0
+        ? inputTokens + cacheReadTokens
+        : state.prevPromptTotal || (state.lastPlanner ? state.lastPlanner.promptTotal : 0);
+    const summaryTokens =
+      outputTokens > 0
+        ? outputTokens
+        : typeof obj.content === 'string' && obj.content.length > 0
+          ? Math.max(1, Math.round(obj.content.length / 4))
+          : 0;
+
+    const effectiveTokens = inputTokens + outputTokens;
+    const totalTokens = inputTokens + cacheReadTokens + outputTokens;
+    if (Number.isFinite(tsMs) && (effectiveTokens > 0 || totalTokens > 0)) {
+      state.events.push({
+        tsMs,
+        effectiveTokens,
+        totalTokens,
+        model: (state.lastPlanner && state.lastPlanner.model) || obj.model || null,
+      });
+    }
+
+    if (beforeTokens > 0) {
+      state.compactionsCount++;
+      state.lastCompactionBefore = beforeTokens;
+      state.lastCompactionAfter = summaryTokens;
+      state.pendingCheckpoint = true;
+      state.prevPromptTotal = summaryTokens;
+    }
+
+    if (state.lastPlanner) {
+      state.lastPlanner = {
+        ...state.lastPlanner,
+        stepIndex: obj.step_index ?? state.lastPlanner.stepIndex,
+        createdAt: obj.created_at || state.lastPlanner.createdAt,
+        tsMs: Number.isFinite(tsMs) ? tsMs : fallbackMtimeMs,
+        inputTokens: summaryTokens,
+        cacheReadTokens: 0,
+        outputTokens: 0,
+        promptTotal: summaryTokens,
+        contextTotal: summaryTokens,
+      };
+    }
+    return;
+  }
+
   if (obj.type === 'PLANNER_RESPONSE') {
     const inputTokens = Number(obj.input_tokens) || 0;
     const cacheReadTokens = Number(obj.cache_read_tokens) || 0;
@@ -279,7 +338,12 @@ function applyTranscriptLine(state, line, fallbackMtimeMs) {
     const promptTotal = inputTokens + cacheReadTokens;
     const contextTotal = promptTotal + outputTokens;
 
-    if (state.prevPromptTotal !== null && state.prevPromptTotal >= 20_000 && promptTotal > 0) {
+    if (state.pendingCheckpoint) {
+      if (promptTotal > 0) {
+        state.lastCompactionAfter = promptTotal;
+      }
+      state.pendingCheckpoint = false;
+    } else if (state.prevPromptTotal !== null && state.prevPromptTotal >= 20_000 && promptTotal > 0) {
       const drop = state.prevPromptTotal - promptTotal;
       if (drop >= 15_000 && promptTotal < state.prevPromptTotal * 0.65) {
         state.compactionsCount++;
@@ -624,16 +688,22 @@ function collectAllMetrics(requestedConvId) {
     now,
     version: APP_VERSION,
     context,
+    plan: state.plan || null,
     subagents: { activeCount: activeSubagentCount },
     localUsage,
     officialQuotas,
     config: {
       enabled: cfg.enabled !== false,
-      lang: ['en', 'ru', 'uk'].includes(cfg.lang) ? cfg.lang : 'en',
+      lang: SUPPORTED_LANGS.includes(cfg.lang) ? cfg.lang : 'en',
       collapsed: !!cfg.collapsed,
       showCache: cfg.showCache !== false,
       showFirstRow: cfg.showFirstRow !== false,
-      showModelBadge: cfg.showModelBadge !== false,
+      showModelBadge: cfg.showModelBadge === true,
+      showPlanBadge: cfg.showPlanBadge !== false,
+      showCompacts: cfg.showCompacts !== false,
+      showCompactBtn: cfg.showCompactBtn !== false,
+      showFiveHour: cfg.showFiveHour !== false,
+      showWeekly: cfg.showWeekly !== false,
       thresholds: sanitizeThresholds(cfg.thresholds),
     },
   };
@@ -880,8 +950,27 @@ function parseDaemonQuotaSummary(raw) {
   return { fiveHour, weekly };
 }
 
+function parseDaemonPlan(raw) {
+  const us = raw && raw.userStatus;
+  if (!us || typeof us !== 'object') return null;
+  const tierName = (us.userTier && typeof us.userTier.name === 'string' ? us.userTier.name : '').trim();
+  const planName = (
+    us.planStatus &&
+    us.planStatus.planInfo &&
+    typeof us.planStatus.planInfo.planName === 'string'
+      ? us.planStatus.planInfo.planName
+      : ''
+  ).trim();
+  const label = tierName || planName;
+  if (!label) return null;
+  const short = planName || label.replace(/^google\s+ai\s+/i, '').trim() || label;
+  return { short: short.slice(0, 20), label: label.slice(0, 60) };
+}
+
 let lastDaemonSyncAttempt = 0;
 let lastDaemonQuotaFp = '';
+let lastPlanFetchAt = 0;
+let lastPlanHubPid = 0;
 let daemonSyncInFlight = null;
 
 async function syncQuotasFromLocalDaemon({ force = false, daemonDir = DAEMON_DIR, persist = true } = {}) {
@@ -902,6 +991,19 @@ async function syncQuotasFromLocalDaemon({ force = false, daemonDir = DAEMON_DIR
       const parsed = parseDaemonQuotaSummary(resp);
       if (!parsed) continue;
 
+      let plan = null;
+      const shouldFetchPlan = !persist || force || hub.pid !== lastPlanHubPid || Date.now() - lastPlanFetchAt > 5 * 60_000;
+      if (shouldFetchPlan) {
+        const statusResp = await callDaemonRpc(hub, 'GetUserStatus', {
+          metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' },
+        });
+        plan = parseDaemonPlan(statusResp);
+        if (persist && plan) {
+          lastPlanFetchAt = Date.now();
+          lastPlanHubPid = hub.pid;
+        }
+      }
+
       const officialQuotas = {
         fiveHour: parsed.fiveHour,
         weekly: parsed.weekly,
@@ -910,28 +1012,31 @@ async function syncQuotasFromLocalDaemon({ force = false, daemonDir = DAEMON_DIR
       };
 
       if (persist) {
-        const prev = getState().officialQuotas || {};
+        const prevState = getState();
+        const prev = prevState.officialQuotas || {};
         const merged = {
           fiveHour: parsed.fiveHour || prev.fiveHour || null,
           weekly: parsed.weekly || prev.weekly || null,
           capturedAt: officialQuotas.capturedAt,
           source: 'ide-daemon',
         };
-        saveState({ officialQuotas: merged });
+        const nextPlan = plan || prevState.plan || null;
+        saveState({ ...prevState, officialQuotas: merged, plan: nextPlan });
         const fp = JSON.stringify({
           f: merged.fiveHour && [merged.fiveHour.percent, merged.fiveHour.resetsAt],
           w: merged.weekly && [merged.weekly.percent, merged.weekly.resetsAt],
+          p: nextPlan && nextPlan.short,
         });
         if (fp !== lastDaemonQuotaFp) {
           lastDaemonQuotaFp = fp;
           log(
-            `Synced quotas from local IDE daemon: 5h=${merged.fiveHour ? merged.fiveHour.percent + '%' : 'n/a'}, week=${merged.weekly ? merged.weekly.percent + '%' : 'n/a'}`
+            `Synced quotas from local IDE daemon: 5h=${merged.fiveHour ? merged.fiveHour.percent + '%' : 'n/a'}, week=${merged.weekly ? merged.weekly.percent + '%' : 'n/a'}${nextPlan ? `, plan=${nextPlan.short}` : ''}`
           );
         }
-        return { ok: true, officialQuotas: merged };
+        return { ok: true, officialQuotas: merged, plan: nextPlan };
       }
 
-      return { ok: true, officialQuotas };
+      return { ok: true, officialQuotas, plan };
     }
 
     return { ok: false, reason: 'no_quota_response' };
@@ -1175,7 +1280,8 @@ function createHttpServer() {
         const raw = await readRequestBody(req);
         const patch = raw ? JSON.parse(raw) : {};
         if (patch.clearOfficialQuotas) {
-          saveState({ officialQuotas: null });
+          const prevState = getState();
+          saveState({ ...prevState, officialQuotas: null });
           delete patch.clearOfficialQuotas;
         }
         const nextCfg = saveConfig(patch);
@@ -1224,7 +1330,9 @@ function createHttpServer() {
           res.end(JSON.stringify({ ok: false, error: 'No valid quota window supplied' }));
           return;
         }
+        const prevState = getState();
         const nextState = saveState({
+          ...prevState,
           officialQuotas: {
             fiveHour: nextFive,
             weekly: nextWeek,
@@ -1441,6 +1549,7 @@ function isMainModule() {
 
 export {
   APP_VERSION,
+  SUPPORTED_LANGS,
   DEFAULT_THRESHOLDS,
   DEFAULT_CONFIG,
   TRANSCRIPT_CACHE_MAX,
@@ -1458,6 +1567,7 @@ export {
   collectUsageSummary,
   findLiveDaemonHubs,
   parseDaemonQuotaSummary,
+  parseDaemonPlan,
   syncQuotasFromLocalDaemon,
   createHttpServer,
   startHttpServer,

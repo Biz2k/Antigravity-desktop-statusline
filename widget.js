@@ -44,8 +44,15 @@
       showCache: 'Show cache hit (%)',
       hideModel: 'Hide model',
       showModel: 'Show model',
+      visibilityTitle: 'Show / Hide',
+      visCompacts: 'Compacts',
+      visCompactBtn: '/compact',
+      visCache: 'Cache',
+      visModel: 'Model',
+      visPlan: 'Plan',
       resetThresholds: 'Reset thresholds',
-      compactHintTip: 'Context is getting full — consider running /compact',
+      compactHintTip: 'Run /compact in chat to compress context',
+      compactDraftTip: 'Copied /compact (input is not empty)',
       burnRateTip: (rate, eta) => eta ? `Rate: ~${rate}/h · ~${eta} to limit` : `Rate: ~${rate}/h`,
       subagentsTip: (n) => `${n} active parallel/subagent session(s)`,
       syncedNote: (ago) => `Quotas synced ${ago} ago.`,
@@ -58,6 +65,162 @@
       unitH: 'h',
       unitM: 'm',
       lt1m: '<1m',
+    },
+    de: {
+      context: 'Kontext',
+      fiveHours: '5 Std.',
+      weekly: 'Woche',
+      short5h: '5h',
+      shortWk: 'Wo',
+      cache: 'Cache',
+      cacheLabel: 'Cache (<)',
+      compacts: 'Kompr.',
+      waitingFirst: 'Warte auf erste Antwort',
+      waitingTooltip: 'Warte auf erste Modellantwort',
+      turns: 'Züge',
+      inTok: 'Ein',
+      outTok: 'Aus',
+      settingsTitle: 'Statusleiste',
+      language: 'Sprache:',
+      thresholdsTitle: 'Schwellen (%)',
+      warnCol: 'Gelb',
+      dangerCol: 'Rot',
+      close: 'Schließen',
+      refresh: 'Aktualisieren',
+      collapse: 'Einklappen',
+      expand: 'Ausklappen',
+      settings: 'Einstellungen',
+      hideRow1: '1. Zeile ausblenden (Kontext)',
+      showRow1: '1. Zeile anzeigen (Kontext)',
+      hideCache: 'Cache aus',
+      showCache: 'Cache an',
+      hideModel: 'Modell aus',
+      showModel: 'Modell an',
+      visibilityTitle: 'Ein- / Ausblenden',
+      visCompacts: 'Kompr.',
+      visCompactBtn: '/compact',
+      visCache: 'Cache',
+      visModel: 'Modell',
+      visPlan: 'Abo',
+      resetThresholds: 'Schwellen zurücksetzen',
+      compactHintTip: '/compact im Chat senden, um den Kontext zu komprimieren',
+      compactDraftTip: '/compact kopiert (Eingabefeld nicht leer)',
+      burnRateTip: (rate, eta) => eta ? `Rate: ~${rate}/h · ~${eta} bis Limit` : `Rate: ~${rate}/h`,
+      subagentsTip: (n) => `${n} aktive parallele/Subagent-Sitzung(en)`,
+      syncedNote: (ago) => `Kontingent vor ${ago} synchr.`,
+      localNote: 'Lokale Token-Schätzung bis zur Synchronisierung.',
+      official5hTip: (ago) => `5h-Kontingent (vor ${ago} synchr.)`,
+      officialWkTip: (ago) => `Wochenkontingent (vor ${ago} synchr.)`,
+      local5hTip: (eff, tot) => `Lokaler 5h-Verbrauch: ${eff} neue Token (${tot} inkl. Cache).`,
+      localWkTip: (eff, tot) => `Lokaler 7T-Verbrauch: ${eff} neue Token (${tot} inkl. Cache).`,
+      unitD: 'T',
+      unitH: 'h',
+      unitM: 'm',
+      lt1m: '<1m',
+    },
+    fr: {
+      context: 'Contexte',
+      fiveHours: '5 heures',
+      weekly: 'Semaine',
+      short5h: '5h',
+      shortWk: 'Sem',
+      cache: 'cache',
+      cacheLabel: 'Cache (<)',
+      compacts: 'comp.',
+      waitingFirst: 'En attente de réponse',
+      waitingTooltip: 'En attente de la première réponse du modèle',
+      turns: 'tours',
+      inTok: 'ent.',
+      outTok: 'sort.',
+      settingsTitle: 'Paramètres',
+      language: 'Langue :',
+      thresholdsTitle: 'Seuils (%)',
+      warnCol: 'Jaune',
+      dangerCol: 'Rouge',
+      close: 'Fermer',
+      refresh: 'Actualiser',
+      collapse: 'Réduire',
+      expand: 'Déplier',
+      settings: 'Paramètres',
+      hideRow1: 'Masquer 1re ligne (Contexte)',
+      showRow1: 'Afficher 1re ligne (Contexte)',
+      hideCache: 'Masquer cache',
+      showCache: 'Afficher cache',
+      hideModel: 'Masquer modèle',
+      showModel: 'Afficher modèle',
+      visibilityTitle: 'Afficher / Masquer',
+      visCompacts: 'Comp.',
+      visCompactBtn: '/compact',
+      visCache: 'Cache',
+      visModel: 'Modèle',
+      visPlan: 'Offre',
+      resetThresholds: 'Réinitialiser les seuils',
+      compactHintTip: 'Envoyer /compact dans le chat pour compresser le contexte',
+      compactDraftTip: '/compact copié (champ de saisie non vide)',
+      burnRateTip: (rate, eta) => eta ? `Rythme : ~${rate}/h · ~${eta} avant limite` : `Rythme : ~${rate}/h`,
+      subagentsTip: (n) => `${n} session(s) parallèle(s)/sous-agent active(s)`,
+      syncedNote: (ago) => `Quotas synchronisés il y a ${ago}.`,
+      localNote: 'Estimation locale en attendant la synchronisation.',
+      official5hTip: (ago) => `Quota 5h (synchr. il y a ${ago})`,
+      officialWkTip: (ago) => `Quota hebdo (synchr. il y a ${ago})`,
+      local5hTip: (eff, tot) => `Usage local 5h : ${eff} nouveaux tokens (${tot} avec cache).`,
+      localWkTip: (eff, tot) => `Usage local 7j : ${eff} nouveaux tokens (${tot} avec cache).`,
+      unitD: 'j',
+      unitH: 'h',
+      unitM: 'm',
+      lt1m: '<1m',
+    },
+    zh: {
+      context: '上下文',
+      fiveHours: '5小时',
+      weekly: '每周',
+      short5h: '5h',
+      shortWk: '周',
+      cache: '缓存',
+      cacheLabel: '缓存 (<)',
+      compacts: '压缩',
+      waitingFirst: '等待首次回复',
+      waitingTooltip: '等待模型首次回复',
+      turns: '轮次',
+      inTok: '输入',
+      outTok: '输出',
+      settingsTitle: '状态栏设置',
+      language: '语言：',
+      thresholdsTitle: '阈值 (%)',
+      warnCol: '黄色',
+      dangerCol: '红色',
+      close: '关闭',
+      refresh: '刷新',
+      collapse: '收起',
+      expand: '展开',
+      settings: '设置',
+      hideRow1: '隐藏第1行 (上下文)',
+      showRow1: '显示第1行 (上下文)',
+      hideCache: '隐藏缓存 (%)',
+      showCache: '显示缓存 (%)',
+      hideModel: '隐藏模型',
+      showModel: '显示模型',
+      visibilityTitle: '显示 / 隐藏',
+      visCompacts: '压缩次数',
+      visCompactBtn: '/compact',
+      visCache: '缓存',
+      visModel: '模型',
+      visPlan: '套餐',
+      resetThresholds: '重置阈值',
+      compactHintTip: '点击向聊天发送 /compact 以压缩上下文',
+      compactDraftTip: '已复制 /compact（输入框非空）',
+      burnRateTip: (rate, eta) => eta ? `速率: ~${rate}/时 · 约 ${eta} 达上限` : `速率: ~${rate}/时`,
+      subagentsTip: (n) => `${n} 个活跃并行/子代理会话`,
+      syncedNote: (ago) => `配额已于 ${ago} 前同步。`,
+      localNote: '配额同步前使用本地估算。',
+      official5hTip: (ago) => `5小时配额 (${ago} 前同步)`,
+      officialWkTip: (ago) => `每周配额 (${ago} 前同步)`,
+      local5hTip: (eff, tot) => `本地5小时用量: ${eff} 新令牌 (含缓存 ${tot})。`,
+      localWkTip: (eff, tot) => `本地7天用量: ${eff} 新令牌 (含缓存 ${tot})。`,
+      unitD: '天',
+      unitH: '时',
+      unitM: '分',
+      lt1m: '<1分',
     },
     ru: {
       context: 'Контекст',
@@ -89,8 +252,15 @@
       showCache: 'Показать кеш (%)',
       hideModel: 'Скрыть модель',
       showModel: 'Показать модель',
+      visibilityTitle: 'Отображать / скрыть',
+      visCompacts: 'Сжатия',
+      visCompactBtn: '/compact',
+      visCache: 'Кеш',
+      visModel: 'Модель',
+      visPlan: 'Подписка',
       resetThresholds: 'Сбросить пороги',
-      compactHintTip: 'Контекст почти заполнен — рекомендуется выполнить /compact',
+      compactHintTip: 'Отправить /compact в чат для сжатия контекста',
+      compactDraftTip: 'Скопировано /compact (поле ввода не пустое)',
       burnRateTip: (rate, eta) => eta ? `Темп: ~${rate}/ч · ~${eta} до лимита` : `Темп: ~${rate}/ч`,
       subagentsTip: (n) => `Активных параллельных/субагент-сессий: ${n}`,
       syncedNote: (ago) => `Квоты синхронизированы ${ago} назад.`,
@@ -134,8 +304,15 @@
       showCache: 'Показати кеш (%)',
       hideModel: 'Приховати модель',
       showModel: 'Показати модель',
+      visibilityTitle: 'Показати / приховати',
+      visCompacts: 'Стиснення',
+      visCompactBtn: '/compact',
+      visCache: 'Кеш',
+      visModel: 'Модель',
+      visPlan: 'Підписка',
       resetThresholds: 'Скинути пороги',
-      compactHintTip: 'Контекст майже заповнений — радимо виконати /compact',
+      compactHintTip: 'Надіслати /compact у чат для стиснення контексту',
+      compactDraftTip: 'Скопійовано /compact (поле введення не порожнє)',
       burnRateTip: (rate, eta) => eta ? `Темп: ~${rate}/г · ~${eta} до ліміту` : `Темп: ~${rate}/г`,
       subagentsTip: (n) => `Активних паралельних/субагент-сесій: ${n}`,
       syncedNote: (ago) => `Квоти синхронізовано ${ago} тому.`,
@@ -308,23 +485,49 @@
       border: 1px solid var(--border, rgba(128, 128, 128, 0.22));
       flex-shrink: 0;
     }
-    .agy-sl-compact-hint {
+    .agy-sl-plan-badge {
+      background: rgba(78, 142, 247, 0.14);
+      color: #6ea8fe;
+      border-color: rgba(78, 142, 247, 0.35);
+      font-weight: 600;
+    }
+    .agy-sl-compact-btn {
       display: inline-flex;
       align-items: center;
       padding: 1px 6px;
       border-radius: 999px;
+      font-family: inherit;
       font-size: 10.5px;
-      font-weight: 600;
+      font-weight: 500;
       line-height: 1.3;
+      background: var(--secondary, rgba(128, 128, 128, 0.14));
+      color: var(--muted-foreground, #9aa0a6);
+      border: 1px solid var(--border, rgba(128, 128, 128, 0.24));
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    }
+    .agy-sl-compact-btn:hover {
+      background: rgba(78, 142, 247, 0.2);
+      color: var(--foreground, #ffffff);
+      border-color: rgba(78, 142, 247, 0.5);
+    }
+    .agy-sl-compact-btn.is-warn {
       background: rgba(224, 160, 48, 0.16);
       color: #e0a030;
-      border: 1px solid rgba(224, 160, 48, 0.4);
-      flex-shrink: 0;
+      border-color: rgba(224, 160, 48, 0.45);
+      font-weight: 600;
     }
-    .agy-sl-compact-hint.is-danger {
+    .agy-sl-compact-btn.is-danger {
       background: rgba(229, 72, 77, 0.16);
       color: #e5484d;
-      border-color: rgba(229, 72, 77, 0.45);
+      border-color: rgba(229, 72, 77, 0.5);
+      font-weight: 600;
+    }
+    .agy-sl-compact-btn.is-sent {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border-color: rgba(16, 185, 129, 0.5);
     }
     .agy-sl-actions {
       margin-left: auto;
@@ -413,9 +616,9 @@
       border: none;
       color: var(--muted-foreground, #9aa0a6);
       font-family: inherit;
-      font-size: 10.5px;
+      font-size: 10px;
       font-weight: 600;
-      padding: 3px 7px;
+      padding: 3px 5px;
       border-radius: 6px;
       cursor: pointer;
       transition: background-color 0.12s ease, color 0.12s ease;
@@ -493,6 +696,60 @@
     .agy-sl-pop-btn:hover {
       background: rgba(78, 142, 247, 0.22);
       border-color: rgba(78, 142, 247, 0.5);
+    }
+    .agy-sl-vis-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border, rgba(128, 128, 128, 0.18));
+    }
+    .agy-sl-vis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 6px;
+    }
+    .agy-sl-vis-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 7px;
+      border-radius: 6px;
+      border: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+      background: transparent;
+      color: var(--muted-foreground, #9aa0a6);
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    }
+    .agy-sl-vis-btn:hover {
+      border-color: rgba(78, 142, 247, 0.45);
+      color: var(--foreground, #e8eaed);
+    }
+    .agy-sl-vis-btn.is-on {
+      background: rgba(78, 142, 247, 0.14);
+      border-color: rgba(78, 142, 247, 0.42);
+      color: var(--foreground, #e8eaed);
+    }
+    .agy-sl-vis-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1px solid rgba(154, 160, 166, 0.55);
+      background: transparent;
+      box-sizing: border-box;
+    }
+    .agy-sl-vis-btn.is-on .agy-sl-vis-dot {
+      border-color: #4e8ef7;
+      background: #4e8ef7;
     }
     .agy-sl-collapsed-row {
       display: flex;
@@ -808,14 +1065,8 @@
 
   function updateDynamicBarWidths(card) {
     if (!card || !card.isConnected) return;
-    const rowLimits = card.querySelector('.agy-sl-row-limits');
-    if (!rowLimits) return;
-
     const availPx = card.clientWidth - 28; // 14px left + 14px right padding
     if (availPx <= 120) return;
-
-    const meters = Array.from(rowLimits.querySelectorAll('.agy-sl-meter-limit'));
-    if (meters.length < 2) return;
 
     const measureMeterFixed = (meter) => {
       let sum = 0;
@@ -834,29 +1085,37 @@
       return sum + Math.max(0, count - 1) * 8;
     };
 
-    const fixed0 = measureMeterFixed(meters[0]);
-    const fixed1 = measureMeterFixed(meters[1]);
-    const row2Actions = rowLimits.querySelector(':scope > .agy-sl-actions');
-    const actionsPx = row2Actions ? row2Actions.getBoundingClientRect().width + 14 : 0;
-
     const MIN_BAR = 44;
     const MAX_BAR = 180;
     const METER_GAP = 18;
     const SAFETY_PX = 4;
 
-    const rawPerBar = Math.floor((availPx - fixed0 - fixed1 - METER_GAP - actionsPx - SAFETY_PX) / 2);
-    let limitBarPx;
+    let limitBarPx = MAX_BAR;
+    const rowLimits = card.querySelector('.agy-sl-row-limits');
+    if (rowLimits) {
+      const meters = Array.from(rowLimits.querySelectorAll('.agy-sl-meter-limit'));
+      const row2Actions = rowLimits.querySelector(':scope > .agy-sl-actions');
+      const actionsPx = row2Actions ? row2Actions.getBoundingClientRect().width + 14 : 0;
 
-    if (rawPerBar >= MIN_BAR) {
-      limitBarPx = Math.min(MAX_BAR, rawPerBar);
-      rowLimits.classList.remove('is-stacked');
-    } else {
-      const maxSingle = Math.max(fixed0, fixed1) + actionsPx + SAFETY_PX;
-      limitBarPx = Math.max(40, Math.min(MAX_BAR, Math.floor(availPx - maxSingle)));
-      rowLimits.classList.add('is-stacked');
+      if (meters.length >= 2) {
+        const fixed0 = measureMeterFixed(meters[0]);
+        const fixed1 = measureMeterFixed(meters[1]);
+        const rawPerBar = Math.floor((availPx - fixed0 - fixed1 - METER_GAP - actionsPx - SAFETY_PX) / 2);
+        if (rawPerBar >= MIN_BAR) {
+          limitBarPx = Math.min(MAX_BAR, rawPerBar);
+          rowLimits.classList.remove('is-stacked');
+        } else {
+          const maxSingle = Math.max(fixed0, fixed1) + actionsPx + SAFETY_PX;
+          limitBarPx = Math.max(40, Math.min(MAX_BAR, Math.floor(availPx - maxSingle)));
+          rowLimits.classList.add('is-stacked');
+        }
+      } else if (meters.length === 1) {
+        const fixed0 = measureMeterFixed(meters[0]);
+        limitBarPx = Math.max(40, Math.min(MAX_BAR, Math.floor(availPx - fixed0 - actionsPx - SAFETY_PX)));
+        rowLimits.classList.remove('is-stacked');
+      }
+      card.style.setProperty('--agy-limit-bar-w', `${limitBarPx}px`);
     }
-
-    card.style.setProperty('--agy-limit-bar-w', `${limitBarPx}px`);
 
     const rowCtx = card.querySelector('.agy-sl-row-context');
     if (rowCtx) {
@@ -899,8 +1158,23 @@
     const nowMs = data.now || Date.now();
     const oq = data.officialQuotas || null;
     const showFirstRow = cfg.showFirstRow !== false;
+    const showCompacts = cfg.showCompacts !== false;
+    const showCompactBtn = cfg.showCompactBtn !== false;
     const showCache = cfg.showCache !== false;
-    const showModelBadge = cfg.showModelBadge !== false;
+    const showModelBadge = cfg.showModelBadge === true;
+    const showPlanBadge = cfg.showPlanBadge !== false;
+    const showFiveHour = cfg.showFiveHour !== false;
+    const showWeekly = cfg.showWeekly !== false;
+    const visItems = [
+      { key: 'showFirstRow', on: showFirstRow, label: s.context },
+      { key: 'showCompacts', on: showCompacts, label: s.visCompacts },
+      { key: 'showCompactBtn', on: showCompactBtn, label: s.visCompactBtn },
+      { key: 'showCache', on: showCache, label: s.visCache },
+      { key: 'showModelBadge', on: showModelBadge, label: s.visModel },
+      { key: 'showPlanBadge', on: showPlanBadge, label: s.visPlan },
+      { key: 'showFiveHour', on: showFiveHour, label: s.fiveHours },
+      { key: 'showWeekly', on: showWeekly, label: s.weekly },
+    ];
     const hasOfficial5h = !!(oq && oq.fiveHour);
     const hasOfficialWeek = !!(oq && oq.weekly);
     const syncedAgo = oq && oq.capturedAt ? fmtAgo(oq.capturedAt, nowMs, s) : '';
@@ -918,8 +1192,22 @@
           <span>${escapeHtml(s.language)}</span>
           <div class="agy-sl-lang-group">
             <button class="agy-sl-lang-btn ${lang === 'en' ? 'is-active' : ''}" data-lang="en">EN</button>
+            <button class="agy-sl-lang-btn ${lang === 'de' ? 'is-active' : ''}" data-lang="de">DE</button>
+            <button class="agy-sl-lang-btn ${lang === 'fr' ? 'is-active' : ''}" data-lang="fr">FR</button>
+            <button class="agy-sl-lang-btn ${lang === 'zh' ? 'is-active' : ''}" data-lang="zh">ZH</button>
             <button class="agy-sl-lang-btn ${lang === 'ru' ? 'is-active' : ''}" data-lang="ru">RU</button>
             <button class="agy-sl-lang-btn ${lang === 'uk' ? 'is-active' : ''}" data-lang="uk">UA</button>
+          </div>
+        </div>
+        <div class="agy-sl-vis-section">
+          <span class="agy-sl-thresh-head">${escapeHtml(s.visibilityTitle)}</span>
+          <div class="agy-sl-vis-grid">
+            ${visItems
+              .map(
+                (item) =>
+                  `<button type="button" class="agy-sl-vis-btn ${item.on ? 'is-on' : ''}" data-vis-key="${item.key}"><span class="agy-sl-vis-dot"></span><span>${escapeHtml(item.label)}</span></button>`
+              )
+              .join('')}
           </div>
         </div>
         <div class="agy-sl-thresh-grid">
@@ -942,13 +1230,6 @@
           <label for="agy-sl-t-wk-w">${escapeHtml(s.weekly)}</label>
           <input class="agy-sl-pop-input" id="agy-sl-t-wk-w" type="text" inputmode="numeric" value="${th.weekly.warn}" />
           <input class="agy-sl-pop-input" id="agy-sl-t-wk-d" type="text" inputmode="numeric" value="${th.weekly.danger}" />
-        </div>
-        <div class="agy-sl-pop-row">
-          <button class="agy-sl-pop-btn" style="width:100%" id="agy-sl-toggle-row1">${escapeHtml(showFirstRow ? s.hideRow1 : s.showRow1)}</button>
-        </div>
-        <div class="agy-sl-pop-row">
-          <button class="agy-sl-pop-btn" style="flex:1" id="agy-sl-toggle-cache">${escapeHtml(showCache ? s.hideCache : s.showCache)}</button>
-          <button class="agy-sl-pop-btn" style="flex:1" id="agy-sl-toggle-model">${escapeHtml(showModelBadge ? s.hideModel : s.showModel)}</button>
         </div>
         <div class="agy-sl-pop-row">
           <button class="agy-sl-pop-btn" style="width:100%" id="agy-sl-reset-thresh">${escapeHtml(s.resetThresholds)}</button>
@@ -978,29 +1259,15 @@
       };
     });
 
-    const toggleRow1Btn = popHost.querySelector('#agy-sl-toggle-row1');
-    if (toggleRow1Btn) {
-      toggleRow1Btn.onclick = async (e) => {
+    popHost.querySelectorAll('.agy-sl-vis-btn').forEach((btn) => {
+      btn.onclick = async (e) => {
         e.stopPropagation();
-        await postConfig({ showFirstRow: !showFirstRow }, true);
+        const key = btn.getAttribute('data-vis-key');
+        if (!key) return;
+        const curOn = key === 'showModelBadge' ? cfg[key] === true : cfg[key] !== false;
+        await postConfig({ [key]: !curOn }, true);
       };
-    }
-
-    const toggleCacheBtn = popHost.querySelector('#agy-sl-toggle-cache');
-    if (toggleCacheBtn) {
-      toggleCacheBtn.onclick = async (e) => {
-        e.stopPropagation();
-        await postConfig({ showCache: !showCache }, true);
-      };
-    }
-
-    const toggleModelBtn = popHost.querySelector('#agy-sl-toggle-model');
-    if (toggleModelBtn) {
-      toggleModelBtn.onclick = async (e) => {
-        e.stopPropagation();
-        await postConfig({ showModelBadge: !showModelBadge }, true);
-      };
-    }
+    });
 
     const resetThreshBtn = popHost.querySelector('#agy-sl-reset-thresh');
     if (resetThreshBtn) {
@@ -1076,6 +1343,145 @@
     });
   }
 
+  function findEditorInComposer(composer) {
+    if (!composer || !composer.isConnected) return null;
+    return composer.querySelector(
+      'textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"]'
+    );
+  }
+
+  function findSendButtonInComposer(composer) {
+    if (!composer || !composer.isConnected) return null;
+    const selectors = [
+      'button[type="submit"]:not(:disabled)',
+      'button[data-testid*="send" i]:not(:disabled)',
+      'button[aria-label*="send" i]:not(:disabled)',
+      'button[aria-label*="submit" i]:not(:disabled)',
+      'button[aria-label*="отправ" i]:not(:disabled)',
+      'button[aria-label*="надісл" i]:not(:disabled)',
+      'button[title*="send" i]:not(:disabled)',
+      'button[title*="отправ" i]:not(:disabled)',
+    ];
+    for (const sel of selectors) {
+      const btn = composer.querySelector(sel);
+      if (btn && !btn.closest(`#${ROOT_ID}`)) return btn;
+    }
+    return null;
+  }
+
+  function dispatchEnterKey(el) {
+    const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+    el.dispatchEvent(new KeyboardEvent('keydown', opts));
+    el.dispatchEvent(new KeyboardEvent('keypress', opts));
+    el.dispatchEvent(new KeyboardEvent('keyup', opts));
+  }
+
+  function findSlashCompactOption() {
+    const containers = document.querySelectorAll(
+      '[role="listbox"], [role="menu"], [data-floating-ui-portal], [data-base-ui-portal]'
+    );
+    for (const c of containers) {
+      if (!c || c.closest(`#${ROOT_ID}`)) continue;
+      const items = c.querySelectorAll('[role="option"], [role="menuitem"], button, li, div');
+      for (const item of items) {
+        const txt = (item.textContent || '').trim();
+        if (!txt || txt.length > 160) continue;
+        if (/^\/compact\b/i.test(txt)) {
+          const rect = item.getBoundingClientRect();
+          if (rect.width > 20 && rect.height > 12) return item;
+        }
+      }
+    }
+    return null;
+  }
+
+  async function triggerCompactInChat(btnEl) {
+    const flash = (label) => {
+      if (!btnEl || !btnEl.isConnected) return;
+      const orig = btnEl.textContent;
+      btnEl.classList.add('is-sent');
+      btnEl.textContent = label;
+      setTimeout(() => {
+        if (btnEl && btnEl.isConnected) {
+          btnEl.classList.remove('is-sent');
+          btnEl.textContent = orig || '/compact';
+        }
+      }, 1200);
+    };
+
+    const copyFallback = async () => {
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText('/compact');
+        }
+      } catch {}
+      flash('✓');
+    };
+
+    try {
+      const composer = getComposerContainer();
+      const editor = findEditorInComposer(composer);
+      if (!editor) {
+        await copyFallback();
+        return;
+      }
+
+      const existingText = (
+        editor.tagName === 'TEXTAREA' ? editor.value : editor.textContent || ''
+      ).trim();
+      // Never clobber an unsent user draft — copy /compact instead
+      if (existingText.length > 0 && existingText !== '/compact') {
+        await copyFallback();
+        return;
+      }
+
+      editor.focus();
+      if (existingText !== '/compact') {
+        if (editor.tagName === 'TEXTAREA') {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+          if (setter) setter.call(editor, '/compact');
+          else editor.value = '/compact';
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          const inserted = document.execCommand && document.execCommand('insertText', false, '/compact');
+          if (!inserted) {
+            editor.textContent = '/compact';
+            editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '/compact' }));
+          }
+        }
+      }
+
+      flash('✓');
+
+      // Step 1: Wait for the slash-command menu to appear and select /compact from it
+      // (clicking Send directly would send literal "/compact" text instead of invoking the slash command)
+      setTimeout(() => {
+        try {
+          const slashItem = findSlashCompactOption();
+          if (slashItem) {
+            slashItem.click();
+          } else {
+            dispatchEnterKey(editor);
+          }
+
+          // Step 2: If selecting the slash command inserted a chip/token that still needs submission, submit it
+          setTimeout(() => {
+            try {
+              const cur = (editor.tagName === 'TEXTAREA' ? editor.value : editor.textContent || '').trim();
+              if (cur.length > 0) {
+                const sendBtn = findSendButtonInComposer(composer);
+                if (sendBtn) sendBtn.click();
+                else dispatchEnterKey(editor);
+              }
+            } catch {}
+          }, 160);
+        } catch {}
+      }, 180);
+    } catch {
+      await copyFallback();
+    }
+  }
+
   async function postConfig(patch, rebuildPopover = false) {
     try {
       const resp = await fetch(`${API_BASE}/api/config`, {
@@ -1115,6 +1521,13 @@
     const localU = data.localUsage || {};
     const oq = data.officialQuotas || null;
     const showFirstRow = cfg.showFirstRow !== false;
+    const showCompacts = cfg.showCompacts !== false;
+    const showCompactBtn = cfg.showCompactBtn !== false;
+    const showCache = cfg.showCache !== false;
+    const showModelBadge = cfg.showModelBadge === true;
+    const showPlanBadge = cfg.showPlanBadge !== false;
+    const showFiveHour = cfg.showFiveHour !== false;
+    const showWeekly = cfg.showWeekly !== false;
 
     const ctxPct = ctx ? ctx.percent : 0;
     const ctxWinStr = ctx ? `${ctx.windowEstimated ? '~' : ''}${fmtTokens(ctx.window)}` : '';
@@ -1122,23 +1535,27 @@
     const ctxColor = barColorClass(ctxPct, th.context);
 
     const metaParts = [];
-    if (ctx && cfg.showModelBadge !== false && ctx.modelShort) {
+    if (showCompacts && ctx && ctx.compactions && ctx.compactions.count > 0) {
+      metaParts.push(`<span class="agy-sl-detail">${s.compacts}: ${ctx.compactions.count}</span>`);
+    }
+    if (showCompactBtn) {
+      const compactCls = ctx && ctxPct >= th.context.danger
+        ? ' is-danger'
+        : (ctx && ctxPct >= th.context.warn ? ' is-warn' : '');
+      metaParts.push(
+        `<button type="button" class="agy-sl-compact-btn${compactCls}" data-action="compact" title="${escapeHtml(s.compactHintTip)}">/compact</button>`
+      );
+    }
+    if (showCache && ctx && ctx.cacheHit !== null && ctx.cacheHit !== undefined) {
+      const cacheCls = cacheColorClass(ctx.cacheHit, th.cache);
+      const prefix = metaParts.length > 0 ? '<span class="agy-sl-dot">·</span>' : '';
+      metaParts.push(`${prefix}<span class="agy-sl-detail${cacheCls ? ' ' + cacheCls : ''}">${s.cache} ${ctx.cacheHit}%</span>`);
+    }
+    if (showModelBadge && ctx && ctx.modelShort) {
       metaParts.push(`<span class="agy-sl-badge" title="${escapeHtml(ctx.modelLabel || ctx.model || '')}">${escapeHtml(ctx.modelShort)}</span>`);
     }
-    if (ctx && cfg.showCache !== false && ctx.cacheHit !== null && ctx.cacheHit !== undefined) {
-      const cacheCls = cacheColorClass(ctx.cacheHit, th.cache);
-      metaParts.push(`<span class="agy-sl-dot">·</span><span class="agy-sl-detail${cacheCls ? ' ' + cacheCls : ''}">${s.cache} ${ctx.cacheHit}%</span>`);
-    }
-    if (ctx && ctx.compactions && ctx.compactions.count > 0) {
-      metaParts.push(
-        `<span class="agy-sl-dot">·</span><span class="agy-sl-detail">${s.compacts}: ${ctx.compactions.count}</span>`
-      );
-    }
-    if (ctx && ctxPct >= Math.max(85, th.context.warn)) {
-      const hintDanger = ctxPct >= th.context.danger ? ' is-danger' : '';
-      metaParts.push(
-        `<span class="agy-sl-compact-hint${hintDanger}" title="${escapeHtml(s.compactHintTip)}">/compact</span>`
-      );
+    if (showPlanBadge && data.plan && data.plan.short) {
+      metaParts.push(`<span class="agy-sl-badge agy-sl-plan-badge" title="${escapeHtml(data.plan.label || data.plan.short)}">${escapeHtml(data.plan.short)}</span>`);
     }
     const activeSubs = data.subagents && data.subagents.activeCount > 0 ? data.subagents.activeCount : 0;
     if (activeSubs > 0) {
@@ -1191,13 +1608,16 @@
     };
 
     const lang = getLang(cfg);
-    const layoutKey = `${cfg.collapsed ? 'c' : 'e'}:${showFirstRow ? '1' : '0'}:${lang}`;
+    const showSecondRow = showFiveHour || showWeekly || !showFirstRow;
+    const layoutKey = `${cfg.collapsed ? 'c' : 'e'}:${showFirstRow ? '1' : '0'}:${showFiveHour ? '1' : '0'}:${showWeekly ? '1' : '0'}:${lang}`;
     const needsRebuild = renderedLayoutKey !== layoutKey || !rowsHost.firstElementChild;
 
     if (cfg.collapsed) {
-      const collapsedSummary = showFirstRow
-        ? `${escapeHtml(s.context)}: <b>${ctxPct}%</b> (${escapeHtml(ctxDetail)}) · ${escapeHtml(s.short5h)}: <b>${fivePctText}</b> · ${escapeHtml(s.shortWk)}: <b>${weekPctText}</b>`
-        : `${escapeHtml(s.short5h)}: <b>${fivePctText}</b> · ${escapeHtml(s.shortWk)}: <b>${weekPctText}</b>`;
+      const cParts = [];
+      if (showFirstRow) cParts.push(`${escapeHtml(s.context)}: <b>${ctxPct}%</b> (${escapeHtml(ctxDetail)})`);
+      if (showFiveHour) cParts.push(`${escapeHtml(s.short5h)}: <b>${fivePctText}</b>`);
+      if (showWeekly) cParts.push(`${escapeHtml(s.shortWk)}: <b>${weekPctText}</b>`);
+      const collapsedSummary = cParts.length > 0 ? cParts.join(' · ') : escapeHtml(s.settingsTitle);
       if (needsRebuild) {
         rowsHost.innerHTML = `
           <div class="agy-sl-collapsed-row">
@@ -1246,8 +1666,8 @@
         `
         : '';
 
-      const row2Html = `
-        <div class="agy-sl-row agy-sl-row-limits">
+      const fiveMeterHtml = showFiveHour
+        ? `
           <div class="agy-sl-meter agy-sl-meter-limit" data-role="five-meter">
             <span class="agy-sl-label">${escapeHtml(s.fiveHours)}</span>
             <div class="agy-sl-track">
@@ -1256,7 +1676,12 @@
             <span class="agy-sl-pct" data-role="five-pct">0%</span>
             <span class="agy-sl-detail" data-role="five-detail" style="display:none"></span>
           </div>
-          <div class="agy-sl-meter agy-sl-meter-limit agy-sl-meter-limit-right" data-role="week-meter">
+        `
+        : '';
+
+      const weekMeterHtml = showWeekly
+        ? `
+          <div class="agy-sl-meter agy-sl-meter-limit${showFiveHour ? ' agy-sl-meter-limit-right' : ''}" data-role="week-meter">
             <span class="agy-sl-label">${escapeHtml(s.weekly)}</span>
             <div class="agy-sl-track">
               <div class="agy-sl-fill" data-role="week-fill" style="width:0%"></div>
@@ -1264,14 +1689,34 @@
             <span class="agy-sl-pct" data-role="week-pct">0%</span>
             <span class="agy-sl-detail" data-role="week-detail" style="display:none"></span>
           </div>
-          ${!showFirstRow ? actionsHtml : ''}
-        </div>
-      `;
+        `
+        : '';
+
+      const row2Html = showSecondRow
+        ? `
+          <div class="agy-sl-row agy-sl-row-limits">
+            ${fiveMeterHtml}
+            ${weekMeterHtml}
+            ${!showFirstRow ? actionsHtml : ''}
+          </div>
+        `
+        : '';
 
       rowsHost.innerHTML = `<div class="agy-sl-rows">${row1Html}${row2Html}</div>`;
       renderedLayoutKey = layoutKey;
       lastMetaHtml = '';
       lastLayoutMetricsKey = '';
+
+      const ctxMetaHost = rowsHost.querySelector('[data-role="ctx-meta"]');
+      if (ctxMetaHost) {
+        ctxMetaHost.onclick = (e) => {
+          const btn = e.target && e.target.closest && e.target.closest('[data-action="compact"]');
+          if (btn) {
+            e.stopPropagation();
+            triggerCompactInChat(btn);
+          }
+        };
+      }
 
       const refBtn = rowsHost.querySelector('#agy-sl-refresh');
       if (refBtn) {
