@@ -1,6 +1,6 @@
 {
   "name": "antigravity-desktop-statusline",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Compact statusline band above the chat prompt in Google AntiGravity 2.0 Desktop — live context window meter, prompt cache hit rate, 5-hour & weekly usage meters with Settings quota sync, zero npm dependencies.",
   "keywords": [
     "google-antigravity",
@@ -32,6 +32,7 @@
   "scripts": {
     "start": "node server.mjs",
     "standalone": "node server.mjs --standalone",
+    "test": "node --test",
     "install:app": "node install.cjs",
     "uninstall:app": "node uninstall.cjs"
   }

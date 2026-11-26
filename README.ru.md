@@ -2,7 +2,7 @@
 
 🌐 [🇬🇧 English](README.md) | **🇷🇺 Русский** | [🇺🇦 Українська](README.ua.md)
 
-[![Version](https://img.shields.io/badge/version-v1.1.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.1.0)
+[![Version](https://img.shields.io/badge/version-v1.2.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -38,7 +38,7 @@
 
 ## ⚙️ Окно настроек (`⚙`)
 
-Нажмите иконку **`⚙`** при наведении на правый край плашки, чтобы переключить язык (`EN | RU | UA`), задать индивидуальные пороги цвета (**Жёлтый / Красный** — применяются сразу при редактировании) или скрыть/показать 1-ю строку (`Контекст`):
+Нажмите иконку **`⚙`** при наведении на правый край плашки, чтобы переключить язык (`EN | RU | UA`), задать индивидуальные пороги цвета (**Жёлтый / Красный** — применяются сразу при редактировании), сбросить пороги к стандартным, скрыть/показать кеш (`showCache`) или 1-ю строку (`Контекст`), а также увидеть статус синхронизации квот:
 
 ![Окно настроек Antigravity Desktop Statusline (RU)](assets/settings-ru.png)
 
@@ -60,7 +60,7 @@
 ### Требования
 - **Node.js 18+** ([nodejs.org](https://nodejs.org/))
 - **Google AntiGravity 2.0 Desktop**
-- Рекомендуется установленный [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) (обеспечивает инъекцию в Electron DOM и hot-reload; загрузчик статус-бара автоматически восстанавливается после обновлений `antigravity-features-v2`).
+- **Требуется для автоматической UI-инъекции:** [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) (обеспечивает инъекцию в Electron DOM и hot-reload; загрузчик статус-бара автоматически восстанавливается после обновлений `antigravity-features-v2`). Без него `install.cjs` зарегистрирует MCP-сервер и локальный HTTP API на `127.0.0.1:39229`, но `loader.js` потребуется внедрять в `app.asar` вручную.
 
 ### Windows (PowerShell — в одну строку)
 ```powershell
@@ -91,7 +91,7 @@ node ~/.antigravity-statusline/install.cjs
 | [`loader.js`](loader.js) | Лёгкий загрузчик для оболочки AntiGravity с проверкой `widgetHash` через `/health` (не перезагружается, пока открыты настройки) |
 | [`install.cjs`](install.cjs) | Кроссплатформенный установщик (MCP + подключение загрузчика) |
 | [`install.ps1`](install.ps1) / [`install.sh`](install.sh) | Однострочные установщики для Windows и macOS/Linux |
-| [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) | Чистое удаление (убирает MCP-запись, загрузчик и папку проекта) |
+| [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) / [`uninstall.sh`](uninstall.sh) | Чистое удаление (убирает MCP-запись, загрузчик и папку проекта) |
 
 ---
 
@@ -108,6 +108,11 @@ node ~/.antigravity-statusline/install.cjs
 **Windows (PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/Biz2k/Antigravity-desktop-statusline/main/uninstall.ps1 | iex
+```
+
+**macOS / Linux (Bash):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Biz2k/Antigravity-desktop-statusline/main/uninstall.sh | bash
 ```
 
 **Любая ОС (Node.js):**

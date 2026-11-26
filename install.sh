@@ -20,8 +20,21 @@ if command -v git >/dev/null 2>&1; then
   if [ -d "$INSTALL_DIR/.git" ]; then
     git -C "$INSTALL_DIR" pull origin main --ff-only
   else
-    rm -rf "$INSTALL_DIR"
+    BAK_DIR=""
+    if [ -d "$INSTALL_DIR" ]; then
+      BAK_DIR="$(mktemp -d -t agy-statusline-bak.XXXXXX)"
+      for f in config.json state.json; do
+        [ -f "$INSTALL_DIR/$f" ] && cp "$INSTALL_DIR/$f" "$BAK_DIR/$f"
+      done
+      rm -rf "$INSTALL_DIR"
+    fi
     git clone "$REPO_URL" "$INSTALL_DIR"
+    if [ -n "$BAK_DIR" ] && [ -d "$BAK_DIR" ]; then
+      for f in config.json state.json; do
+        [ -f "$BAK_DIR/$f" ] && cp "$BAK_DIR/$f" "$INSTALL_DIR/$f"
+      done
+      rm -rf "$BAK_DIR"
+    fi
   fi
 else
   TMP_ZIP="$(mktemp -t agy-statusline.XXXXXX.zip)"

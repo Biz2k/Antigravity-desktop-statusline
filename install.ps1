@@ -35,8 +35,24 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     if (Test-Path (Join-Path $InstallDir ".git")) {
         git -C $InstallDir pull origin main --ff-only
     } else {
-        if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
+        $BackupDir = $null
+        if (Test-Path $InstallDir) {
+            $BackupDir = Join-Path $env:TEMP ("antigravity-statusline-bak-" + [System.Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+            foreach ($f in @("config.json", "state.json")) {
+                $src = Join-Path $InstallDir $f
+                if (Test-Path $src) { Copy-Item -Path $src -Destination (Join-Path $BackupDir $f) -Force }
+            }
+            Remove-Item $InstallDir -Recurse -Force
+        }
         git clone $RepoUrl $InstallDir
+        if ($BackupDir -and (Test-Path $BackupDir)) {
+            foreach ($f in @("config.json", "state.json")) {
+                $bak = Join-Path $BackupDir $f
+                if (Test-Path $bak) { Copy-Item -Path $bak -Destination (Join-Path $InstallDir $f) -Force }
+            }
+            Remove-Item $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 } else {
     $TmpZip = Join-Path $env:TEMP "antigravity-statusline.zip"

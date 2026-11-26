@@ -40,6 +40,9 @@
       settings: 'Settings',
       hideRow1: 'Hide 1st row (Context)',
       showRow1: 'Show 1st row (Context)',
+      hideCache: 'Hide cache hit (%)',
+      showCache: 'Show cache hit (%)',
+      resetThresholds: 'Reset thresholds',
       syncedNote: (ago) => `Quotas synced ${ago} ago.`,
       localNote: 'Local token estimate active until quotas sync.',
       official5hTip: (ago) => `5h quota (synced ${ago} ago)`,
@@ -77,6 +80,9 @@
       settings: 'Настройки',
       hideRow1: 'Скрыть 1-ю строку (Контекст)',
       showRow1: 'Показать 1-ю строку (Контекст)',
+      hideCache: 'Скрыть кеш (%)',
+      showCache: 'Показать кеш (%)',
+      resetThresholds: 'Сбросить пороги',
       syncedNote: (ago) => `Квоты синхронизированы ${ago} назад.`,
       localNote: 'Локальный расчёт токенов до синхронизации квот.',
       official5hTip: (ago) => `5-часовая квота (синхр. ${ago} назад)`,
@@ -114,6 +120,9 @@
       settings: 'Налаштування',
       hideRow1: 'Приховати 1-й рядок (Контекст)',
       showRow1: 'Показати 1-й рядок (Контекст)',
+      hideCache: 'Приховати кеш (%)',
+      showCache: 'Показати кеш (%)',
+      resetThresholds: 'Скинути пороги',
       syncedNote: (ago) => `Квоти синхронізовано ${ago} тому.`,
       localNote: 'Локальний підрахунок токенів до синхронізації квот.',
       official5hTip: (ago) => `5-годинна квота (синхр. ${ago} тому)`,
@@ -307,7 +316,7 @@
       position: absolute;
       right: 8px;
       bottom: calc(100% + 6px);
-      width: 248px;
+      width: 264px;
       box-sizing: border-box;
       background: var(--card, #1e1f22);
       border: 1px solid var(--border, rgba(128, 128, 128, 0.28));
@@ -460,7 +469,14 @@
   let settingsScanTimer = null;
   let domObserver = null;
   let cardResizeObserver = null;
+  let composerResizeObserver = null;
   let observedCard = null;
+  let observedComposer = null;
+  let cachedComposer = null;
+  let remountTimer = null;
+  let renderedLayoutKey = '';
+  let lastMetaHtml = '';
+  let lastLayoutMetricsKey = '';
   let popoverOpen = false;
   let lastQuotaFingerprint = '';
 
@@ -660,31 +676,58 @@
     return host;
   }
 
+  function getComposerContainer() {
+    if (cachedComposer && cachedComposer.isConnected) {
+      return cachedComposer;
+    }
+    cachedComposer = findComposerContainer();
+    return cachedComposer;
+  }
+
+  function observeComposerResize(composer) {
+    if (typeof ResizeObserver === 'undefined' || !composer || composer === observedComposer) return;
+    if (composerResizeObserver) {
+      try { composerResizeObserver.disconnect(); } catch {}
+    }
+    observedComposer = composer;
+    composerResizeObserver = new ResizeObserver(() => {
+      const root = document.getElementById(ROOT_ID);
+      if (root && composer.isConnected) {
+        syncWidthWithComposer(root, composer);
+      }
+    });
+    composerResizeObserver.observe(composer);
+  }
+
   function ensureMounted() {
     if (disposed) return null;
-    const composer = findComposerContainer();
+    const composer = getComposerContainer();
     let existing = document.getElementById(ROOT_ID);
 
     if (existing && (!existing.shadowRoot || !existing.shadowRoot.querySelector('.agy-sl-rows-host'))) {
       existing.remove();
       existing = null;
+      renderedLayoutKey = '';
     }
 
     if (!composer || !composer.parentElement) {
       if (existing) existing.remove();
+      renderedLayoutKey = '';
       return null;
     }
 
     const parent = composer.parentElement;
     if (existing && existing.parentElement === parent && existing.nextElementSibling === composer) {
-      syncWidthWithComposer(existing, composer);
+      observeComposerResize(composer);
       return existing;
     }
 
     const root = existing || createRootElement();
+    if (!existing) renderedLayoutKey = '';
     try {
       parent.insertBefore(root, composer);
       syncWidthWithComposer(root, composer);
+      observeComposerResize(composer);
       return root;
     } catch {
       return null;
@@ -798,9 +841,13 @@
     const nowMs = data.now || Date.now();
     const oq = data.officialQuotas || null;
     const showFirstRow = cfg.showFirstRow !== false;
+    const showCache = cfg.showCache !== false;
     const hasOfficial5h = !!(oq && oq.fiveHour);
     const hasOfficialWeek = !!(oq && oq.weekly);
     const syncedAgo = oq && oq.capturedAt ? fmtAgo(oq.capturedAt, nowMs, s) : '';
+    const statusNote = (hasOfficial5h || hasOfficialWeek) && syncedAgo
+      ? s.syncedNote(syncedAgo)
+      : s.localNote;
 
     popHost.innerHTML = `
       <div class="agy-sl-popover" id="agy-sl-popover">
@@ -840,6 +887,11 @@
         <div class="agy-sl-pop-row">
           <button class="agy-sl-pop-btn" style="width:100%" id="agy-sl-toggle-row1">${escapeHtml(showFirstRow ? s.hideRow1 : s.showRow1)}</button>
         </div>
+        <div class="agy-sl-pop-row">
+          <button class="agy-sl-pop-btn" style="flex:1" id="agy-sl-toggle-cache">${escapeHtml(showCache ? s.hideCache : s.showCache)}</button>
+          <button class="agy-sl-pop-btn" id="agy-sl-reset-thresh">${escapeHtml(s.resetThresholds)}</button>
+        </div>
+        <div class="agy-sl-pop-note">${escapeHtml(statusNote)}</div>
       </div>
     `;
 
@@ -869,6 +921,22 @@
       toggleRow1Btn.onclick = async (e) => {
         e.stopPropagation();
         await postConfig({ showFirstRow: !showFirstRow }, true);
+      };
+    }
+
+    const toggleCacheBtn = popHost.querySelector('#agy-sl-toggle-cache');
+    if (toggleCacheBtn) {
+      toggleCacheBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await postConfig({ showCache: !showCache }, true);
+      };
+    }
+
+    const resetThreshBtn = popHost.querySelector('#agy-sl-reset-thresh');
+    if (resetThreshBtn) {
+      resetThreshBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await postConfig({ thresholds: DEFAULT_THRESHOLDS }, true);
       };
     }
 
@@ -979,7 +1047,8 @@
     const showFirstRow = cfg.showFirstRow !== false;
 
     const ctxPct = ctx ? ctx.percent : 0;
-    const ctxDetail = ctx ? `${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)}` : s.waitingFirst;
+    const ctxWinStr = ctx ? `${ctx.windowEstimated ? '~' : ''}${fmtTokens(ctx.window)}` : '';
+    const ctxDetail = ctx ? `${fmtTokens(ctx.tokens)} / ${ctxWinStr}` : s.waitingFirst;
     const ctxColor = barColorClass(ctxPct, th.context);
 
     const metaParts = [];
@@ -997,12 +1066,14 @@
     const hasOfficialWeek = !!(oq && oq.weekly);
 
     const fivePct = hasOfficial5h ? oq.fiveHour.percent : (localU.fiveHour ? localU.fiveHour.percent : 0);
+    const fivePctText = hasOfficial5h ? `${fivePct}%` : `~${fivePct}%`;
     const fiveColor = barColorClass(fivePct, th.fiveHour);
     const fiveReset = hasOfficial5h && oq.fiveHour.resetsAt
       ? `↻ ${fmtUntil(oq.fiveHour.resetsAt, nowMs, s)} (${fmtClock(oq.fiveHour.resetsAt)})`
       : (localU.fiveHour ? `${fmtTokens(localU.fiveHour.effectiveTokens)}` : '');
 
     const weekPct = hasOfficialWeek ? oq.weekly.percent : (localU.weekly ? localU.weekly.percent : 0);
+    const weekPctText = hasOfficialWeek ? `${weekPct}%` : `~${weekPct}%`;
     const weekColor = barColorClass(weekPct, th.weekly);
     const weekReset = hasOfficialWeek && oq.weekly.resetsAt
       ? `↻ ${fmtUntil(oq.weekly.resetsAt, nowMs, s)}`
@@ -1022,90 +1093,186 @@
       ? `${ctx.modelLabel || ctx.model || 'Model'} · ${s.turns}: ${ctx.turns} · ${s.inTok}: ${fmtTokens(ctx.inputTokens)} + ${s.cache}: ${fmtTokens(ctx.cacheReadTokens)} + ${s.outTok}: ${fmtTokens(ctx.outputTokens)}`
       : s.waitingTooltip;
 
-    const actionsHtml = `
-      <div class="agy-sl-actions">
-        <button class="agy-sl-icon-btn" id="agy-sl-refresh" title="${escapeHtml(s.refresh)}">↻</button>
-        <button class="agy-sl-icon-btn" id="agy-sl-collapse" title="${escapeHtml(s.collapse)}">▾</button>
-        <button class="agy-sl-icon-btn" id="agy-sl-settings" title="${escapeHtml(s.settings)}">⚙</button>
-      </div>
-    `;
+    const setAttrIfChanged = (el, attr, val) => {
+      if (el && el.getAttribute(attr) !== val) el.setAttribute(attr, val);
+    };
+    const setTextIfChanged = (el, val) => {
+      if (el && el.textContent !== val) el.textContent = val;
+    };
+
+    const lang = getLang(cfg);
+    const layoutKey = `${cfg.collapsed ? 'c' : 'e'}:${showFirstRow ? '1' : '0'}:${lang}`;
+    const needsRebuild = renderedLayoutKey !== layoutKey || !rowsHost.firstElementChild;
 
     if (cfg.collapsed) {
       const collapsedSummary = showFirstRow
-        ? `${escapeHtml(s.context)}: <b>${ctxPct}%</b> (${escapeHtml(ctxDetail)}) · ${escapeHtml(s.short5h)}: <b>${fivePct}%</b> · ${escapeHtml(s.shortWk)}: <b>${weekPct}%</b>`
-        : `${escapeHtml(s.short5h)}: <b>${fivePct}%</b> · ${escapeHtml(s.shortWk)}: <b>${weekPct}%</b>`;
-      rowsHost.innerHTML = `
-        <div class="agy-sl-collapsed-row">
-          <span>${collapsedSummary}</span>
-          <div class="agy-sl-actions" style="opacity:0.85">
-            <button class="agy-sl-icon-btn" id="agy-sl-expand" title="${escapeHtml(s.expand)}">▲</button>
+        ? `${escapeHtml(s.context)}: <b>${ctxPct}%</b> (${escapeHtml(ctxDetail)}) · ${escapeHtml(s.short5h)}: <b>${fivePctText}</b> · ${escapeHtml(s.shortWk)}: <b>${weekPctText}</b>`
+        : `${escapeHtml(s.short5h)}: <b>${fivePctText}</b> · ${escapeHtml(s.shortWk)}: <b>${weekPctText}</b>`;
+      if (needsRebuild) {
+        rowsHost.innerHTML = `
+          <div class="agy-sl-collapsed-row">
+            <span data-role="collapsed-summary"></span>
+            <div class="agy-sl-actions" style="opacity:0.85">
+              <button class="agy-sl-icon-btn" id="agy-sl-expand" title="${escapeHtml(s.expand)}">▲</button>
+            </div>
           </div>
-        </div>
-      `;
-      const expBtn = rowsHost.querySelector('#agy-sl-expand');
-      if (expBtn) expBtn.onclick = () => postConfig({ collapsed: false });
+        `;
+        const expBtn = rowsHost.querySelector('#agy-sl-expand');
+        if (expBtn) expBtn.onclick = () => postConfig({ collapsed: false });
+        renderedLayoutKey = layoutKey;
+        lastMetaHtml = '';
+        lastLayoutMetricsKey = '';
+      }
+      const sumEl = rowsHost.querySelector('[data-role="collapsed-summary"]');
+      if (sumEl && sumEl.innerHTML !== collapsedSummary) {
+        sumEl.innerHTML = collapsedSummary;
+      }
       return;
     }
 
-    const row1Html = showFirstRow
-      ? `
-        <div class="agy-sl-row agy-sl-row-context">
-          <div class="agy-sl-meter agy-sl-meter-context" title="${escapeHtml(ctxTooltip)}">
-            <span class="agy-sl-label">${escapeHtml(s.context)}</span>
-            <div class="agy-sl-track">
-              <div class="agy-sl-fill ${ctxColor}" style="width:${ctxPct}%"></div>
+    if (needsRebuild) {
+      const actionsHtml = `
+        <div class="agy-sl-actions">
+          <button class="agy-sl-icon-btn" id="agy-sl-refresh" title="${escapeHtml(s.refresh)}">↻</button>
+          <button class="agy-sl-icon-btn" id="agy-sl-collapse" title="${escapeHtml(s.collapse)}">▾</button>
+          <button class="agy-sl-icon-btn" id="agy-sl-settings" title="${escapeHtml(s.settings)}">⚙</button>
+        </div>
+      `;
+
+      const row1Html = showFirstRow
+        ? `
+          <div class="agy-sl-row agy-sl-row-context">
+            <div class="agy-sl-meter agy-sl-meter-context" data-role="ctx-meter">
+              <span class="agy-sl-label">${escapeHtml(s.context)}</span>
+              <div class="agy-sl-track">
+                <div class="agy-sl-fill" data-role="ctx-fill" style="width:0%"></div>
+              </div>
+              <span class="agy-sl-pct" data-role="ctx-pct">—</span>
+              <span class="agy-sl-detail" data-role="ctx-detail"></span>
             </div>
-            <span class="agy-sl-pct ${ctxColor}">${ctx ? `${ctxPct}%` : '—'}</span>
-            <span class="agy-sl-detail">${escapeHtml(ctxDetail)}</span>
+            <div class="agy-sl-meta" data-role="ctx-meta"></div>
+            ${actionsHtml}
           </div>
-          <div class="agy-sl-meta">${metaParts.join('')}</div>
-          ${actionsHtml}
-        </div>
-      `
-      : '';
+        `
+        : '';
 
-    const row2Html = `
-      <div class="agy-sl-row agy-sl-row-limits">
-        <div class="agy-sl-meter agy-sl-meter-limit" title="${escapeHtml(fiveTooltip)}">
-          <span class="agy-sl-label">${escapeHtml(s.fiveHours)}</span>
-          <div class="agy-sl-track">
-            <div class="agy-sl-fill ${fiveColor}" style="width:${fivePct}%"></div>
+      const row2Html = `
+        <div class="agy-sl-row agy-sl-row-limits">
+          <div class="agy-sl-meter agy-sl-meter-limit" data-role="five-meter">
+            <span class="agy-sl-label">${escapeHtml(s.fiveHours)}</span>
+            <div class="agy-sl-track">
+              <div class="agy-sl-fill" data-role="five-fill" style="width:0%"></div>
+            </div>
+            <span class="agy-sl-pct" data-role="five-pct">0%</span>
+            <span class="agy-sl-detail" data-role="five-detail" style="display:none"></span>
           </div>
-          <span class="agy-sl-pct ${fiveColor}">${fivePct}%</span>
-          ${fiveReset ? `<span class="agy-sl-detail">${escapeHtml(fiveReset)}</span>` : ''}
-        </div>
-        <div class="agy-sl-meter agy-sl-meter-limit agy-sl-meter-limit-right" title="${escapeHtml(weekTooltip)}">
-          <span class="agy-sl-label">${escapeHtml(s.weekly)}</span>
-          <div class="agy-sl-track">
-            <div class="agy-sl-fill ${weekColor}" style="width:${weekPct}%"></div>
+          <div class="agy-sl-meter agy-sl-meter-limit agy-sl-meter-limit-right" data-role="week-meter">
+            <span class="agy-sl-label">${escapeHtml(s.weekly)}</span>
+            <div class="agy-sl-track">
+              <div class="agy-sl-fill" data-role="week-fill" style="width:0%"></div>
+            </div>
+            <span class="agy-sl-pct" data-role="week-pct">0%</span>
+            <span class="agy-sl-detail" data-role="week-detail" style="display:none"></span>
           </div>
-          <span class="agy-sl-pct ${weekColor}">${weekPct}%</span>
-          ${weekReset ? `<span class="agy-sl-detail">${escapeHtml(weekReset)}</span>` : ''}
+          ${!showFirstRow ? actionsHtml : ''}
         </div>
-        ${!showFirstRow ? actionsHtml : ''}
-      </div>
-    `;
+      `;
 
-    rowsHost.innerHTML = `<div class="agy-sl-rows">${row1Html}${row2Html}</div>`;
+      rowsHost.innerHTML = `<div class="agy-sl-rows">${row1Html}${row2Html}</div>`;
+      renderedLayoutKey = layoutKey;
+      lastMetaHtml = '';
+      lastLayoutMetricsKey = '';
+
+      const refBtn = rowsHost.querySelector('#agy-sl-refresh');
+      if (refBtn) refBtn.onclick = (e) => { e.stopPropagation(); fetchStatusAndRender(); };
+
+      const colBtn = rowsHost.querySelector('#agy-sl-collapse');
+      if (colBtn) colBtn.onclick = (e) => { e.stopPropagation(); setPopoverOpen(card, false); postConfig({ collapsed: true }); };
+
+      const setBtn = rowsHost.querySelector('#agy-sl-settings');
+      if (setBtn) {
+        setBtn.onclick = (e) => {
+          e.stopPropagation();
+          const next = !popoverOpen;
+          if (next) {
+            renderPopover(card, popHost, lastData || data);
+          }
+          setPopoverOpen(card, next);
+        };
+      }
+    }
+
+    const metaHtml = metaParts.join('');
+    if (showFirstRow) {
+      setAttrIfChanged(rowsHost.querySelector('[data-role="ctx-meter"]'), 'title', ctxTooltip);
+      const ctxFill = rowsHost.querySelector('[data-role="ctx-fill"]');
+      if (ctxFill) {
+        const nextCls = `agy-sl-fill ${ctxColor}`;
+        if (ctxFill.className !== nextCls) ctxFill.className = nextCls;
+        const nextW = `${ctxPct}%`;
+        if (ctxFill.style.width !== nextW) ctxFill.style.width = nextW;
+      }
+      const ctxPctEl = rowsHost.querySelector('[data-role="ctx-pct"]');
+      if (ctxPctEl) {
+        const nextCls = `agy-sl-pct ${ctxColor}`;
+        if (ctxPctEl.className !== nextCls) ctxPctEl.className = nextCls;
+        setTextIfChanged(ctxPctEl, ctx ? `${ctxPct}%` : '—');
+      }
+      setTextIfChanged(rowsHost.querySelector('[data-role="ctx-detail"]'), ctxDetail);
+      const ctxMetaEl = rowsHost.querySelector('[data-role="ctx-meta"]');
+      if (ctxMetaEl && metaHtml !== lastMetaHtml) {
+        ctxMetaEl.innerHTML = metaHtml;
+        lastMetaHtml = metaHtml;
+      }
+    }
+
+    setAttrIfChanged(rowsHost.querySelector('[data-role="five-meter"]'), 'title', fiveTooltip);
+    const fiveFill = rowsHost.querySelector('[data-role="five-fill"]');
+    if (fiveFill) {
+      const nextCls = `agy-sl-fill ${fiveColor}`;
+      if (fiveFill.className !== nextCls) fiveFill.className = nextCls;
+      const nextW = `${fivePct}%`;
+      if (fiveFill.style.width !== nextW) fiveFill.style.width = nextW;
+    }
+    const fivePctEl = rowsHost.querySelector('[data-role="five-pct"]');
+    if (fivePctEl) {
+      const nextCls = `agy-sl-pct ${fiveColor}`;
+      if (fivePctEl.className !== nextCls) fivePctEl.className = nextCls;
+      setTextIfChanged(fivePctEl, fivePctText);
+    }
+    const fiveDetEl = rowsHost.querySelector('[data-role="five-detail"]');
+    if (fiveDetEl) {
+      setTextIfChanged(fiveDetEl, fiveReset);
+      const nextDisp = fiveReset ? '' : 'none';
+      if (fiveDetEl.style.display !== nextDisp) fiveDetEl.style.display = nextDisp;
+    }
+
+    setAttrIfChanged(rowsHost.querySelector('[data-role="week-meter"]'), 'title', weekTooltip);
+    const weekFill = rowsHost.querySelector('[data-role="week-fill"]');
+    if (weekFill) {
+      const nextCls = `agy-sl-fill ${weekColor}`;
+      if (weekFill.className !== nextCls) weekFill.className = nextCls;
+      const nextW = `${weekPct}%`;
+      if (weekFill.style.width !== nextW) weekFill.style.width = nextW;
+    }
+    const weekPctEl = rowsHost.querySelector('[data-role="week-pct"]');
+    if (weekPctEl) {
+      const nextCls = `agy-sl-pct ${weekColor}`;
+      if (weekPctEl.className !== nextCls) weekPctEl.className = nextCls;
+      setTextIfChanged(weekPctEl, weekPctText);
+    }
+    const weekDetEl = rowsHost.querySelector('[data-role="week-detail"]');
+    if (weekDetEl) {
+      setTextIfChanged(weekDetEl, weekReset);
+      const nextDisp = weekReset ? '' : 'none';
+      if (weekDetEl.style.display !== nextDisp) weekDetEl.style.display = nextDisp;
+    }
+
     observeCardResize(card);
-    updateDynamicBarWidths(card);
-
-    const refBtn = rowsHost.querySelector('#agy-sl-refresh');
-    if (refBtn) refBtn.onclick = (e) => { e.stopPropagation(); fetchStatusAndRender(); };
-
-    const colBtn = rowsHost.querySelector('#agy-sl-collapse');
-    if (colBtn) colBtn.onclick = (e) => { e.stopPropagation(); setPopoverOpen(card, false); postConfig({ collapsed: true }); };
-
-    const setBtn = rowsHost.querySelector('#agy-sl-settings');
-    if (setBtn) {
-      setBtn.onclick = (e) => {
-        e.stopPropagation();
-        const next = !popoverOpen;
-        if (next) {
-          renderPopover(card, popHost, lastData || data);
-        }
-        setPopoverOpen(card, next);
-      };
+    const metricsKey = `${layoutKey}|${ctxDetail}|${metaHtml}|${fivePctText}|${fiveReset}|${weekPctText}|${weekReset}`;
+    if (needsRebuild || metricsKey !== lastLayoutMetricsKey) {
+      lastLayoutMetricsKey = metricsKey;
+      updateDynamicBarWidths(card);
     }
 
     // Only rebuild the popover DOM when explicitly requested (e.g. language/row toggle) or when closed/empty.
@@ -1115,39 +1282,73 @@
     }
   }
 
-  function parseDurationToIso(text) {
+  function parseDurationInfo(text) {
     if (!text) return null;
     const dMatch = text.match(/(\d+)\s*(?:d|day|days|д|дн)/i);
     const hMatch = text.match(/(\d+)\s*(?:h|hr|hrs|hour|hours|ч|час|г|год)/i);
     const mMatch = text.match(/(\d+)\s*(?:m|min|mins|minute|minutes|м|мин|хв)/i);
-    const totalMs =
-      (dMatch ? Number(dMatch[1]) * 86400_000 : 0) +
-      (hMatch ? Number(hMatch[1]) * 3600_000 : 0) +
-      (mMatch ? Number(mMatch[1]) * 60_000 : 0);
+    const d = dMatch ? Number(dMatch[1]) : 0;
+    const h = hMatch ? Number(hMatch[1]) : 0;
+    const m = mMatch ? Number(mMatch[1]) : 0;
+    const totalMs = d * 86400_000 + h * 3600_000 + m * 60_000;
     if (totalMs <= 0) return null;
-    return new Date(Date.now() + totalMs).toISOString();
+    // Round to nearest minute so repeated scans don't drift by milliseconds
+    const roundedMs = Math.round((Date.now() + totalMs) / 60_000) * 60_000;
+    return {
+      iso: new Date(roundedMs).toISOString(),
+      key: `${d}d${h}h${m}m`,
+    };
+  }
+
+  function findSettingsScanRoots() {
+    const roots = [];
+    const dialogs = document.querySelectorAll('[role="dialog"], [data-base-ui-portal], [data-floating-ui-portal]');
+    for (const d of dialogs) {
+      if (d && !d.closest(`#${ROOT_ID}`)) roots.push(d);
+    }
+    const href = (window.location && window.location.href) || '';
+    const isSettingsRoute = /(?:settings|models|account|usage|billing|quota)/i.test(href);
+    const hasActiveComposer = !!(cachedComposer && cachedComposer.isConnected);
+    if (roots.length === 0 && (isSettingsRoute || !hasActiveComposer)) {
+      const main = document.querySelector('main') || document.body;
+      if (main) roots.push(main);
+    }
+    return roots;
   }
 
   function scanSettingsDomForQuotas() {
+    if (disposed || document.hidden) return;
     try {
-      const bodyText = document.body ? document.body.innerText : '';
-      if (!bodyText || bodyText.length < 40) return;
-      const looksLikeModelsSettings =
-        /(quota|квот|rate limit|лимит|ліміт|остаток|залишок|refreshes in|resets in|сброс через|обновится через|восстановится через|відновиться через)/i.test(bodyText) &&
-        /(weekly|недел|тижн|5[\s-]*(?:hour|час|год|h\b|ч\b|г\b))/i.test(bodyText);
-      if (!looksLikeModelsSettings) return;
+      const roots = findSettingsScanRoots();
+      if (roots.length === 0) return;
 
-      const blocks = Array.from(document.querySelectorAll('section, article, div')).filter((el) => {
+      const quotaRe = /(quota|квот|rate limit|лимит|ліміт|остаток|залишок|refreshes in|resets in|сброс через|обновится через|восстановится через|відновиться через)/i;
+      const windowRe = /(weekly|недел|тижн|5[\s-]*(?:hour|час|год|h\b|ч\b|г\b))/i;
+
+      let matchedRoot = null;
+      for (const r of roots) {
+        // Use textContent (no layout/reflow) for fast pre-check
+        const txt = r.textContent || '';
+        if (txt.length >= 40 && quotaRe.test(txt) && windowRe.test(txt)) {
+          matchedRoot = r;
+          break;
+        }
+      }
+      if (!matchedRoot) return;
+
+      const blocks = Array.from(matchedRoot.querySelectorAll('section, article, div')).filter((el) => {
         if (el.closest(`#${ROOT_ID}`)) return false;
-        const txt = el.innerText || '';
+        const txt = el.textContent || '';
         return txt.length > 10 && txt.length < 400 && /\d{1,3}%/.test(txt);
       });
 
       let fiveHour = null;
+      let fiveKey = '';
       let weekly = null;
+      let weekKey = '';
 
       for (const el of blocks) {
-        const txt = (el.innerText || '').trim();
+        const txt = (el.innerText || el.textContent || '').trim();
         const pctMatch = txt.match(/(\d{1,3})\s*%/);
         if (!pctMatch) continue;
         let pct = Math.max(0, Math.min(100, Number(pctMatch[1])));
@@ -1156,17 +1357,20 @@
         if (isRemaining && !isExplicitUsedHeader) {
           pct = 100 - pct;
         }
-        const resetsAt = parseDurationToIso(txt);
+        const dur = parseDurationInfo(txt);
+        const resetsAt = dur ? dur.iso : null;
 
         if (!fiveHour && /(5[\s-]*(?:hour|hr|час|год)|5h\b|5ч\b|5г\b)/i.test(txt) && !/(weekly|недел|тиж)/i.test(txt)) {
           fiveHour = { percent: pct, resetsAt };
+          fiveKey = `${pct}:${dur ? dur.key : ''}`;
         } else if (!weekly && /(weekly|7[\s-]*day|недел|тиж)/i.test(txt) && !/(5[\s-]*(?:hour|hr|час|год))/i.test(txt)) {
           weekly = { percent: pct, resetsAt };
+          weekKey = `${pct}:${dur ? dur.key : ''}`;
         }
       }
 
       if (!fiveHour && !weekly) return;
-      const fp = JSON.stringify({ fiveHour, weekly });
+      const fp = `${fiveKey}|${weekKey}`;
       if (fp === lastQuotaFingerprint) return;
       lastQuotaFingerprint = fp;
 
@@ -1204,31 +1408,53 @@
     setPopoverOpen(card, false);
   }
 
+  function scheduleRemount() {
+    if (remountTimer || disposed || !lastData) return;
+    remountTimer = setTimeout(() => {
+      remountTimer = null;
+      if (disposed || !lastData || document.hidden) return;
+      const existing = document.getElementById(ROOT_ID);
+      if (!existing || !existing.isConnected) {
+        render(lastData);
+      }
+    }, 150);
+  }
+
+  function onVisibilityChange() {
+    if (!document.hidden && !disposed) {
+      fetchStatusAndRender();
+    }
+  }
+
   injectHostStyle();
   fetchStatusAndRender();
 
-  pollTimer = setInterval(fetchStatusAndRender, 3000);
+  pollTimer = setInterval(() => {
+    if (!document.hidden) fetchStatusAndRender();
+  }, 3000);
   mountTimer = setInterval(() => {
-    if (lastData) {
-      const existing = document.getElementById(ROOT_ID);
-      if (!existing || !existing.isConnected) {
-        render(lastData);
-      } else {
-        const composer = findComposerContainer();
-        if (composer) syncWidthWithComposer(existing, composer);
-      }
+    if (document.hidden || !lastData) return;
+    const existing = document.getElementById(ROOT_ID);
+    if (!existing || !existing.isConnected) {
+      render(lastData);
+      return;
     }
-  }, 1000);
+    if (!cachedComposer || !cachedComposer.isConnected || existing.nextElementSibling !== cachedComposer) {
+      cachedComposer = null;
+      render(lastData);
+    }
+  }, 2000);
   settingsScanTimer = setInterval(scanSettingsDomForQuotas, 2500);
 
   document.addEventListener('click', onDocClick);
+  document.addEventListener('visibilitychange', onVisibilityChange);
 
   try {
     domObserver = new MutationObserver(() => {
-      if (!lastData || disposed) return;
+      if (!lastData || disposed || document.hidden) return;
       const existing = document.getElementById(ROOT_ID);
       if (!existing || !existing.isConnected) {
-        render(lastData);
+        scheduleRemount();
       }
     });
     if (document.body) {
@@ -1242,14 +1468,21 @@
     if (pollTimer) clearInterval(pollTimer);
     if (mountTimer) clearInterval(mountTimer);
     if (settingsScanTimer) clearInterval(settingsScanTimer);
+    if (remountTimer) clearTimeout(remountTimer);
     if (domObserver) {
       try { domObserver.disconnect(); } catch {}
     }
     if (cardResizeObserver) {
       try { cardResizeObserver.disconnect(); } catch {}
     }
+    if (composerResizeObserver) {
+      try { composerResizeObserver.disconnect(); } catch {}
+    }
     observedCard = null;
+    observedComposer = null;
+    cachedComposer = null;
     document.removeEventListener('click', onDocClick);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     const root = document.getElementById(ROOT_ID);
     if (root) root.remove();
     const style = document.getElementById(STYLE_ID);

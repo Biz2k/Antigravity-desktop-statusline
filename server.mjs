@@ -10,6 +10,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const APP_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    if (pkg && typeof pkg.version === 'string' && pkg.version.trim()) {
+      return pkg.version.trim();
+    }
+  } catch {}
+  return '1.1.0';
+})();
+
 const PORT = 39229;
 const HOST = '127.0.0.1';
 const USER_HOME = os.homedir();
@@ -75,9 +85,22 @@ function readJsonSafe(filePath, fallback) {
   return fallback;
 }
 
+function writeFileAtomic(filePath, content) {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
+}
+
 function writeJsonSafe(filePath, obj) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+    writeFileAtomic(filePath, JSON.stringify(obj, null, 2) + '\n');
   } catch (err) {
     log(`writeJsonSafe(${filePath}) error: ${err.message}`);
   }
@@ -159,14 +182,22 @@ function saveState(next) {
   return next;
 }
 
-function resolveModelWindow(modelId, cfg) {
-  if (!modelId || typeof modelId !== 'string') return 1_000_000;
-  const lower = modelId.toLowerCase();
-  const windows = cfg.modelWindows || DEFAULT_CONFIG.modelWindows;
-  for (const [prefix, size] of Object.entries(windows)) {
-    if (lower.includes(prefix.toLowerCase())) return size;
+function resolveModelWindowInfo(modelId, cfg) {
+  if (!modelId || typeof modelId !== 'string') {
+    return { window: 1_000_000, estimated: true };
   }
-  return 1_000_000;
+  const lower = modelId.toLowerCase();
+  const windows = (cfg && cfg.modelWindows) || DEFAULT_CONFIG.modelWindows;
+  for (const [prefix, size] of Object.entries(windows)) {
+    if (lower.includes(prefix.toLowerCase())) {
+      return { window: size, estimated: false };
+    }
+  }
+  return { window: 1_000_000, estimated: true };
+}
+
+function resolveModelWindow(modelId, cfg) {
+  return resolveModelWindowInfo(modelId, cfg).window;
 }
 
 function formatModelLabel(modelId) {
@@ -183,8 +214,110 @@ function formatModelLabel(modelId) {
   return effort ? `${pretty} (${effort})` : pretty;
 }
 
-// Per-transcript cache keyed by path -> { mtimeMs, size, parsed }
+// Per-transcript LRU cache keyed by path -> { mtimeMs, size, ino, byteOffset, state, parsed }
+const TRANSCRIPT_CACHE_MAX = 50;
 const transcriptCache = new Map();
+
+function createParserState() {
+  return {
+    startedAtMs: null,
+    turns: 0,
+    lastPlanner: null,
+    prevPromptTotal: null,
+    compactionsCount: 0,
+    lastCompactionBefore: null,
+    lastCompactionAfter: null,
+    events: [], // { tsMs, effectiveTokens, totalTokens }
+  };
+}
+
+function applyTranscriptLine(state, line, fallbackMtimeMs) {
+  if (!line || line[0] !== '{') return;
+  // Fast pre-check before JSON.parse on multi-MB transcripts
+  const isPlanner = line.includes('"PLANNER_RESPONSE"');
+  const isUser = !isPlanner && line.includes('"USER_INPUT"');
+  if (!isPlanner && !isUser) return;
+
+  let obj;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return;
+  }
+
+  const tsMs = obj.created_at ? Date.parse(obj.created_at) : NaN;
+  if (Number.isFinite(tsMs) && (state.startedAtMs === null || tsMs < state.startedAtMs)) {
+    state.startedAtMs = tsMs;
+  }
+
+  if (obj.type === 'USER_INPUT') {
+    state.turns++;
+    return;
+  }
+
+  if (obj.type === 'PLANNER_RESPONSE') {
+    const inputTokens = Number(obj.input_tokens) || 0;
+    const cacheReadTokens = Number(obj.cache_read_tokens) || 0;
+    const outputTokens = Number(obj.output_tokens) || 0;
+    const promptTotal = inputTokens + cacheReadTokens;
+    const contextTotal = promptTotal + outputTokens;
+
+    if (state.prevPromptTotal !== null && state.prevPromptTotal >= 20_000 && promptTotal > 0) {
+      const drop = state.prevPromptTotal - promptTotal;
+      if (drop >= 15_000 && promptTotal < state.prevPromptTotal * 0.65) {
+        state.compactionsCount++;
+        state.lastCompactionBefore = state.prevPromptTotal;
+        state.lastCompactionAfter = promptTotal;
+      }
+    }
+    if (promptTotal > 0) {
+      state.prevPromptTotal = promptTotal;
+    }
+
+    const effectiveTokens = inputTokens + outputTokens;
+    if (Number.isFinite(tsMs) && (effectiveTokens > 0 || contextTotal > 0)) {
+      state.events.push({ tsMs, effectiveTokens, totalTokens: contextTotal });
+    }
+
+    state.lastPlanner = {
+      stepIndex: obj.step_index,
+      createdAt: obj.created_at || null,
+      tsMs: Number.isFinite(tsMs) ? tsMs : fallbackMtimeMs,
+      model: obj.model || null,
+      inputTokens,
+      cacheReadTokens,
+      outputTokens,
+      promptTotal,
+      contextTotal,
+    };
+  }
+}
+
+function buildParsedSnapshot(convId, st, state) {
+  return {
+    conversationId: convId,
+    mtimeMs: st.mtimeMs,
+    startedAtMs: state.startedAtMs || st.birthtimeMs || st.mtimeMs,
+    turns: state.turns,
+    lastPlanner: state.lastPlanner,
+    compactions: state.compactionsCount > 0
+      ? { count: state.compactionsCount, before: state.lastCompactionBefore, after: state.lastCompactionAfter }
+      : null,
+    events: state.events,
+  };
+}
+
+function setTranscriptCacheEntry(filePath, entry) {
+  if (transcriptCache.has(filePath)) {
+    transcriptCache.delete(filePath);
+  }
+  transcriptCache.set(filePath, entry);
+  while (transcriptCache.size > TRANSCRIPT_CACHE_MAX) {
+    const oldestKey = transcriptCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    transcriptCache.delete(oldestKey);
+  }
+}
 
 function parseTranscriptFile(filePath, convId) {
   let st;
@@ -193,104 +326,79 @@ function parseTranscriptFile(filePath, convId) {
   } catch {
     return null;
   }
+
   const cached = transcriptCache.get(filePath);
-  if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+  const sameInode = !!(cached && cached.ino === st.ino);
+
+  if (cached && sameInode && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+    // Refresh LRU order
+    setTranscriptCacheEntry(filePath, cached);
     return cached.parsed;
   }
 
-  let raw;
-  try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
+  const canIncremental = !!(cached && sameInode && st.size >= cached.byteOffset);
+  const state = canIncremental ? cached.state : createParserState();
+  let byteOffset = canIncremental ? cached.byteOffset : 0;
 
-  const lines = raw.split(/\r?\n/);
-  let startedAtMs = null;
-  let turns = 0;
-  let lastPlanner = null;
-  let prevPromptTotal = null;
-  let compactionsCount = 0;
-  let lastCompactionBefore = null;
-  let lastCompactionAfter = null;
-  const events = []; // { tsMs, effectiveTokens, totalTokens }
+  const bytesToRead = st.size - byteOffset;
+  let trailingLine = '';
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line || line[0] !== '{') continue;
-    // Fast pre-check before JSON.parse on multi-MB transcripts
-    const isPlanner = line.includes('"PLANNER_RESPONSE"');
-    const isUser = !isPlanner && line.includes('"USER_INPUT"');
-    if (!isPlanner && !isUser) continue;
-
-    let obj;
+  if (bytesToRead > 0) {
+    let buf;
+    let fd;
     try {
-      obj = JSON.parse(line);
+      fd = fs.openSync(filePath, 'r');
+      buf = Buffer.allocUnsafe(bytesToRead);
+      let totalRead = 0;
+      while (totalRead < bytesToRead) {
+        const n = fs.readSync(fd, buf, totalRead, bytesToRead - totalRead, byteOffset + totalRead);
+        if (n <= 0) break;
+        totalRead += n;
+      }
+      if (totalRead < bytesToRead) {
+        buf = buf.subarray(0, totalRead);
+      }
     } catch {
-      continue;
+      return null;
+    } finally {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch {}
+      }
     }
 
-    const tsMs = obj.created_at ? Date.parse(obj.created_at) : NaN;
-    if (Number.isFinite(tsMs) && (startedAtMs === null || tsMs < startedAtMs)) {
-      startedAtMs = tsMs;
+    // Commit only complete newline-terminated lines so UTF-8 multi-byte chars and partial writes are never split
+    const lastNl = buf.lastIndexOf(0x0a);
+    if (lastNl !== -1) {
+      const completeChunk = buf.subarray(0, lastNl + 1).toString('utf8');
+      const lines = completeChunk.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        applyTranscriptLine(state, lines[i], st.mtimeMs);
+      }
+      byteOffset += lastNl + 1;
     }
 
-    if (obj.type === 'USER_INPUT') {
-      turns++;
-      continue;
-    }
-
-    if (obj.type === 'PLANNER_RESPONSE') {
-      const inputTokens = Number(obj.input_tokens) || 0;
-      const cacheReadTokens = Number(obj.cache_read_tokens) || 0;
-      const outputTokens = Number(obj.output_tokens) || 0;
-      const promptTotal = inputTokens + cacheReadTokens;
-      const contextTotal = promptTotal + outputTokens;
-
-      if (prevPromptTotal !== null && prevPromptTotal >= 20_000 && promptTotal > 0) {
-        const drop = prevPromptTotal - promptTotal;
-        if (drop >= 15_000 && promptTotal < prevPromptTotal * 0.65) {
-          compactionsCount++;
-          lastCompactionBefore = prevPromptTotal;
-          lastCompactionAfter = promptTotal;
-        }
-      }
-      if (promptTotal > 0) {
-        prevPromptTotal = promptTotal;
-      }
-
-      const effectiveTokens = inputTokens + outputTokens;
-      if (Number.isFinite(tsMs) && (effectiveTokens > 0 || contextTotal > 0)) {
-        events.push({ tsMs, effectiveTokens, totalTokens: contextTotal });
-      }
-
-      lastPlanner = {
-        stepIndex: obj.step_index,
-        createdAt: obj.created_at || null,
-        tsMs: Number.isFinite(tsMs) ? tsMs : st.mtimeMs,
-        model: obj.model || null,
-        inputTokens,
-        cacheReadTokens,
-        outputTokens,
-        promptTotal,
-        contextTotal,
-      };
+    if (lastNl + 1 < buf.length) {
+      trailingLine = buf.subarray(lastNl + 1).toString('utf8').replace(/\r$/, '');
     }
   }
 
-  const parsed = {
-    conversationId: convId,
-    mtimeMs: st.mtimeMs,
-    startedAtMs: startedAtMs || st.birthtimeMs || st.mtimeMs,
-    turns,
-    lastPlanner,
-    compactions: compactionsCount > 0
-      ? { count: compactionsCount, before: lastCompactionBefore, after: lastCompactionAfter }
-      : null,
-    events,
-  };
+  // If the file has a complete trailing JSON line without a final newline, apply it ephemerally for this snapshot
+  // without advancing byteOffset so it won't be double-counted once a newline is appended.
+  let snapshotState = state;
+  if (trailingLine) {
+    snapshotState = { ...state, events: state.events.slice() };
+    applyTranscriptLine(snapshotState, trailingLine, st.mtimeMs);
+  }
 
-  transcriptCache.set(filePath, { mtimeMs: st.mtimeMs, size: st.size, parsed });
+  const parsed = buildParsedSnapshot(convId, st, snapshotState);
+  setTranscriptCacheEntry(filePath, {
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    ino: st.ino,
+    byteOffset,
+    state,
+    parsed,
+  });
   return parsed;
 }
 
@@ -380,7 +488,7 @@ function collectAllMetrics(requestedConvId) {
   let context = null;
   if (activeParsed && activeParsed.lastPlanner) {
     const lp = activeParsed.lastPlanner;
-    const windowSize = resolveModelWindow(lp.model, cfg);
+    const { window: windowSize, estimated: windowEstimated } = resolveModelWindowInfo(lp.model, cfg);
     const usedTokens = lp.contextTotal;
     const contextPercent = windowSize > 0 ? Math.min(100, Math.round((usedTokens / windowSize) * 100)) : 0;
     const promptDenom = lp.inputTokens + lp.cacheReadTokens;
@@ -392,6 +500,7 @@ function collectAllMetrics(requestedConvId) {
       modelLabel: formatModelLabel(lp.model),
       tokens: usedTokens,
       window: windowSize,
+      windowEstimated,
       percent: contextPercent,
       inputTokens: lp.inputTokens,
       cacheReadTokens: lp.cacheReadTokens,
@@ -456,7 +565,7 @@ function collectAllMetrics(requestedConvId) {
 
   return {
     now,
-    version: '1.1.0',
+    version: APP_VERSION,
     context,
     localUsage,
     officialQuotas,
@@ -510,7 +619,7 @@ function ensureLoaderAttached() {
       try { fs.unlinkSync(tmpFile); } catch {}
     }
 
-    fs.writeFileSync(FEATURES_V2_BUNDLE, patched, 'utf8');
+    writeFileAtomic(FEATURES_V2_BUNDLE, patched);
     log('Re-attached ANTIGRAVITY_STATUSLINE_LOADER_V1 into localization_injected.js');
   } catch (err) {
     log(`ensureLoaderAttached error: ${err.message}`);
@@ -532,17 +641,48 @@ function readRequestBody(req, maxBytes = 64 * 1024) {
   });
 }
 
-function startHttpServer() {
-  const server = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+function isAllowedOrigin(origin) {
+  if (!origin || origin === 'null') return true;
+  const lower = String(origin).toLowerCase();
+  if (
+    lower.startsWith('vscode-file://') ||
+    lower.startsWith('antigravity-ide://') ||
+    lower.startsWith('file://')
+  ) {
+    return true;
+  }
+  try {
+    const u = new URL(origin);
+    if ((u.protocol === 'http:' || u.protocol === 'https:') && (u.hostname === '127.0.0.1' || u.hostname === 'localhost')) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function createHttpServer() {
+  return http.createServer(async (req, res) => {
+    const origin = req.headers.origin;
+    const originAllowed = isAllowedOrigin(origin);
+
+    if (origin && originAllowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Expose-Headers', 'X-Widget-Hash, Content-Length');
     res.setHeader('Cache-Control', 'no-store');
 
     if (req.method === 'OPTIONS') {
-      res.writeHead(204);
+      res.writeHead(originAllowed ? 204 : 403);
       res.end();
+      return;
+    }
+
+    if (req.method === 'POST' && !originAllowed) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'Forbidden origin' }));
       return;
     }
 
@@ -552,7 +692,7 @@ function startHttpServer() {
     if (pathname === '/health') {
       const w = getWidgetPayload();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, version: '1.1.0', widgetHash: w ? w.hash : null }));
+      res.end(JSON.stringify({ ok: true, version: APP_VERSION, widgetHash: w ? w.hash : null }));
       return;
     }
 
@@ -645,20 +785,26 @@ function startHttpServer() {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'Not found' }));
   });
+}
+
+function startHttpServer(port = PORT, host = HOST) {
+  const server = createHttpServer();
 
   server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-      log(`HTTP port ${PORT} already bound by primary instance; running MCP stdio only.`);
+      log(`HTTP port ${port} already bound by primary instance; running MCP stdio only.`);
     } else {
       log(`HTTP server error: ${err.message}`);
     }
   });
 
-  server.listen(PORT, HOST, () => {
-    log(`Statusline HTTP server listening on http://${HOST}:${PORT}`);
+  server.listen(port, host, () => {
+    log(`Statusline HTTP server listening on http://${host}:${port}`);
     ensureLoaderAttached();
     setInterval(ensureLoaderAttached, 60_000).unref();
   });
+
+  return server;
 }
 
 // Lightweight zero-dependency MCP Stdio JSON-RPC 2.0 server
@@ -692,7 +838,7 @@ function startMcpStdio() {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'antigravity-statusline', version: '1.1.0' },
+          serverInfo: { name: 'antigravity-statusline', version: APP_VERSION },
         },
       });
       return;
@@ -764,8 +910,46 @@ function startMcpStdio() {
   });
 }
 
-const isStandalone = process.argv.includes('--standalone');
-startHttpServer();
-if (!isStandalone) {
-  startMcpStdio();
+function clearTranscriptCache() {
+  transcriptCache.clear();
+  cachedAggregate = null;
+  lastAggregateAt = 0;
+}
+
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+  } catch {
+    const a = path.resolve(process.argv[1]);
+    const b = path.resolve(__filename);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+export {
+  APP_VERSION,
+  DEFAULT_THRESHOLDS,
+  DEFAULT_CONFIG,
+  TRANSCRIPT_CACHE_MAX,
+  transcriptCache,
+  writeFileAtomic,
+  isAllowedOrigin,
+  sanitizeThresholds,
+  resolveModelWindowInfo,
+  resolveModelWindow,
+  formatModelLabel,
+  parseTranscriptFile,
+  clearTranscriptCache,
+  createHttpServer,
+  startHttpServer,
+  startMcpStdio,
+};
+
+if (isMainModule()) {
+  const isStandalone = process.argv.includes('--standalone');
+  startHttpServer();
+  if (!isStandalone) {
+    startMcpStdio();
+  }
 }

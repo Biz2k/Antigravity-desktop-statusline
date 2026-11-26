@@ -2,7 +2,7 @@
 
 🌐 **🇬🇧 English** | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.ua.md)
 
-[![Version](https://img.shields.io/badge/version-v1.1.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.1.0)
+[![Version](https://img.shields.io/badge/version-v1.2.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -38,7 +38,7 @@
 
 ## ⚙️ Settings Popover (`⚙`)
 
-Click **`⚙`** on hover in the top-right corner of the statusline band to switch languages (`EN | RU | UA`), configure individual **Yellow / Red** color thresholds (applied immediately as you edit), or hide/show the 1st row (`Context`):
+Click **`⚙`** on hover in the top-right corner of the statusline band to switch languages (`EN | RU | UA`), configure individual **Yellow / Red** color thresholds (applied immediately as you edit), reset thresholds to defaults, toggle prompt cache display (`showCache`), hide/show the 1st row (`Context`), and view quota sync status:
 
 ![Antigravity Desktop Statusline — Settings (EN)](assets/settings-en.png)
 
@@ -60,7 +60,7 @@ All preferences are saved automatically to `~/.antigravity-statusline/config.jso
 ### Prerequisites
 - **Node.js 18+** ([nodejs.org](https://nodejs.org/))
 - **Google AntiGravity 2.0 Desktop**
-- Recommended: [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) installed (provides seamless Electron DOM injection & hot-reload; the statusline loader also auto-reattaches after `antigravity-features-v2` updates).
+- **Required for automatic UI injection:** [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) (provides Electron DOM injection & hot-reload; the statusline loader also auto-reattaches after `antigravity-features-v2` updates). Without it, `install.cjs` still registers the MCP server & local HTTP API on `127.0.0.1:39229`, but `loader.js` must be injected into `app.asar` manually.
 
 ### Windows (PowerShell — 1-line)
 ```powershell
@@ -91,7 +91,7 @@ Then **restart AntiGravity** (including exiting from the system tray).
 | [`loader.js`](loader.js) | Lightweight top-shell-only loader that polls `/health` (`widgetHash`) and defers hot-reloads while settings are open |
 | [`install.cjs`](install.cjs) | Cross-platform installer (registers MCP configs + attaches loader) |
 | [`install.ps1`](install.ps1) / [`install.sh`](install.sh) | One-line installers for Windows and macOS/Linux |
-| [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) | Clean uninstaller (removes MCP registration, strips loader, cleans directory) |
+| [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) / [`uninstall.sh`](uninstall.sh) | Clean uninstaller (removes MCP registration, strips loader, cleans directory) |
 
 ---
 
@@ -108,6 +108,11 @@ Then **restart AntiGravity** (including exiting from the system tray).
 **Windows (PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/Biz2k/Antigravity-desktop-statusline/main/uninstall.ps1 | iex
+```
+
+**macOS / Linux (Bash):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Biz2k/Antigravity-desktop-statusline/main/uninstall.sh | bash
 ```
 
 **Cross-platform (Node.js):**
