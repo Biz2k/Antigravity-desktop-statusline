@@ -30,6 +30,7 @@ jobs:
           node --check server.mjs
           node --check widget.js
           node --check loader.js
+          node --check asar-patcher.cjs
           node --check install.cjs
           node --check uninstall.cjs
 

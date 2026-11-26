@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import https from 'https';
 import crypto from 'crypto';
 import readline from 'readline';
 import { execSync } from 'child_process';
@@ -24,6 +25,7 @@ const PORT = 39229;
 const HOST = '127.0.0.1';
 const USER_HOME = os.homedir();
 const BRAIN_DIR = path.join(USER_HOME, '.gemini', 'antigravity', 'brain');
+const DAEMON_DIR = path.join(USER_HOME, '.gemini', 'antigravity', 'daemon');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 const STATE_FILE = path.join(__dirname, 'state.json');
 const WIDGET_FILE = path.join(__dirname, 'widget.js');
@@ -45,6 +47,7 @@ const DEFAULT_CONFIG = {
   collapsed: false,
   showCache: true,
   showFirstRow: true,
+  showModelBadge: true,
   fiveHourBudgetTokens: 1_500_000,
   weeklyBudgetTokens: 15_000_000,
   thresholds: DEFAULT_THRESHOLDS,
@@ -214,6 +217,20 @@ function formatModelLabel(modelId) {
   return effort ? `${pretty} (${effort})` : pretty;
 }
 
+function formatModelShort(modelId) {
+  if (!modelId || typeof modelId !== 'string') return '';
+  const base = modelId.replace(/-(xhigh|high|medium|low|max)$/i, '');
+  const lower = base.toLowerCase();
+  const g4 = lower.match(/^gemini-4-([a-z0-9]+)/);
+  if (g4) return g4[1].charAt(0).toUpperCase() + g4[1].slice(1);
+  const g3 = lower.match(/^gemini-(3(?:\.\d+)?)-([a-z0-9]+)/);
+  if (g3) return `G${g3[1]} ${g3[2].charAt(0).toUpperCase() + g3[2].slice(1)}`;
+  const claude = lower.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/);
+  if (claude) return `${claude[1].charAt(0).toUpperCase() + claude[1].slice(1)} ${claude[2]}.${claude[3]}`;
+  if (lower.startsWith('gpt-oss')) return 'GPT-OSS';
+  return formatModelLabel(base).slice(0, 18);
+}
+
 // Per-transcript LRU cache keyed by path -> { mtimeMs, size, ino, byteOffset, state, parsed }
 const TRANSCRIPT_CACHE_MAX = 50;
 const transcriptCache = new Map();
@@ -276,7 +293,7 @@ function applyTranscriptLine(state, line, fallbackMtimeMs) {
 
     const effectiveTokens = inputTokens + outputTokens;
     if (Number.isFinite(tsMs) && (effectiveTokens > 0 || contextTotal > 0)) {
-      state.events.push({ tsMs, effectiveTokens, totalTokens: contextTotal });
+      state.events.push({ tsMs, effectiveTokens, totalTokens: contextTotal, model: obj.model || null });
     }
 
     state.lastPlanner = {
@@ -441,8 +458,11 @@ function collectAllMetrics(requestedConvId) {
 
   // Rolling 5h and 7d usage across all recent conversations (cached for 2s)
   if (!cachedAggregate || now - lastAggregateAt > 2000) {
+    const cutoff30m = now - 30 * 60_000;
     const cutoff5h = now - FIVE_HOURS_MS;
     const cutoff7d = now - SEVEN_DAYS_MS;
+    let eff30m = 0;
+    let oldest30m = null;
     let eff5h = 0;
     let total5h = 0;
     let req5h = 0;
@@ -469,10 +489,16 @@ function collectAllMetrics(requestedConvId) {
           req5h++;
           if (oldest5h === null || ev.tsMs < oldest5h) oldest5h = ev.tsMs;
         }
+        if (ev.tsMs >= cutoff30m) {
+          eff30m += ev.effectiveTokens;
+          if (oldest30m === null || ev.tsMs < oldest30m) oldest30m = ev.tsMs;
+        }
       }
     }
 
     cachedAggregate = {
+      eff30m,
+      oldest30m,
       eff5h,
       total5h,
       req5h,
@@ -483,6 +509,18 @@ function collectAllMetrics(requestedConvId) {
       oldest7d,
     };
     lastAggregateAt = now;
+  }
+
+  // Detect active parallel/subagent conversations updated within the last 60s
+  const subagentCutoff = now - 60_000;
+  let activeSubagentCount = 0;
+  for (const c of candidates) {
+    if (activeCandidate && c.convId === activeCandidate.convId) continue;
+    if (c.mtimeMs >= subagentCutoff) {
+      activeSubagentCount++;
+    } else {
+      break; // candidates are sorted by mtimeMs descending
+    }
   }
 
   let context = null;
@@ -498,6 +536,7 @@ function collectAllMetrics(requestedConvId) {
       conversationId: activeParsed.conversationId,
       model: lp.model,
       modelLabel: formatModelLabel(lp.model),
+      modelShort: formatModelShort(lp.model),
       tokens: usedTokens,
       window: windowSize,
       windowEstimated,
@@ -517,14 +556,32 @@ function collectAllMetrics(requestedConvId) {
   const budget5h = Math.max(50_000, Number(cfg.fiveHourBudgetTokens) || DEFAULT_CONFIG.fiveHourBudgetTokens);
   const budget7d = Math.max(500_000, Number(cfg.weeklyBudgetTokens) || DEFAULT_CONFIG.weeklyBudgetTokens);
 
+  const fiveHourPct = Math.min(100, Math.round((cachedAggregate.eff5h / budget5h) * 100));
+  let burnRate = null;
+  if (cachedAggregate.eff30m > 0 && cachedAggregate.oldest30m !== null) {
+    const spanMs = Math.max(5 * 60_000, Math.min(30 * 60_000, now - cachedAggregate.oldest30m));
+    const tokensPerHour = Math.round((cachedAggregate.eff30m / spanMs) * 3600_000);
+    const pctPerHour = (tokensPerHour / budget5h) * 100;
+    const remainingPct = Math.max(0, 100 - fiveHourPct);
+    const minutesToLimit =
+      remainingPct > 0 && pctPerHour > 0.5
+        ? Math.round((remainingPct / pctPerHour) * 60)
+        : null;
+    burnRate = {
+      tokensPerHour,
+      minutesToLimit: minutesToLimit !== null && minutesToLimit <= 1440 ? minutesToLimit : null,
+    };
+  }
+
   const localUsage = {
     fiveHour: {
       effectiveTokens: cachedAggregate.eff5h,
       totalTokens: cachedAggregate.total5h,
       requests: cachedAggregate.req5h,
       budgetTokens: budget5h,
-      percent: Math.min(100, Math.round((cachedAggregate.eff5h / budget5h) * 100)),
+      percent: fiveHourPct,
       resetsAt: cachedAggregate.oldest5h ? new Date(cachedAggregate.oldest5h + FIVE_HOURS_MS).toISOString() : null,
+      burnRate,
     },
     weekly: {
       effectiveTokens: cachedAggregate.eff7d,
@@ -567,6 +624,7 @@ function collectAllMetrics(requestedConvId) {
     now,
     version: APP_VERSION,
     context,
+    subagents: { activeCount: activeSubagentCount },
     localUsage,
     officialQuotas,
     config: {
@@ -575,8 +633,81 @@ function collectAllMetrics(requestedConvId) {
       collapsed: !!cfg.collapsed,
       showCache: cfg.showCache !== false,
       showFirstRow: cfg.showFirstRow !== false,
+      showModelBadge: cfg.showModelBadge !== false,
       thresholds: sanitizeThresholds(cfg.thresholds),
     },
+  };
+}
+
+function collectUsageSummary(daysInput = 7, brainDir = BRAIN_DIR) {
+  const daysNum = Number(daysInput);
+  const days = Number.isFinite(daysNum) ? Math.max(1, Math.min(30, Math.round(daysNum))) : 7;
+  const now = Date.now();
+  const cutoff = now - days * 24 * 3600 * 1000;
+
+  let entries = [];
+  try {
+    if (fs.existsSync(brainDir)) {
+      entries = fs.readdirSync(brainDir, { withFileTypes: true });
+    }
+  } catch {}
+
+  const total = { requests: 0, effectiveTokens: 0, totalTokens: 0, conversations: 0 };
+  const byModel = {};
+  const byDay = {};
+
+  for (const ent of entries) {
+    if (!ent.isDirectory() || !UUID_RE.test(ent.name)) continue;
+    const tPath = path.join(brainDir, ent.name, '.system_generated', 'logs', 'transcript.jsonl');
+    let st;
+    try {
+      st = fs.statSync(tPath);
+    } catch {
+      continue;
+    }
+    if (st.mtimeMs < cutoff - 60_000) continue;
+    const p = parseTranscriptFile(tPath, ent.name);
+    if (!p) continue;
+
+    let convMatched = false;
+    for (const ev of p.events) {
+      if (ev.tsMs < cutoff) continue;
+      convMatched = true;
+      total.requests++;
+      total.effectiveTokens += ev.effectiveTokens;
+      total.totalTokens += ev.totalTokens;
+
+      const modelKey = ev.model || 'unknown';
+      if (!byModel[modelKey]) {
+        byModel[modelKey] = {
+          modelLabel: ev.model ? formatModelLabel(ev.model) : 'Unknown',
+          requests: 0,
+          effectiveTokens: 0,
+          totalTokens: 0,
+        };
+      }
+      byModel[modelKey].requests++;
+      byModel[modelKey].effectiveTokens += ev.effectiveTokens;
+      byModel[modelKey].totalTokens += ev.totalTokens;
+
+      const dayKey = new Date(ev.tsMs).toISOString().slice(0, 10);
+      if (!byDay[dayKey]) {
+        byDay[dayKey] = { requests: 0, effectiveTokens: 0, totalTokens: 0 };
+      }
+      byDay[dayKey].requests++;
+      byDay[dayKey].effectiveTokens += ev.effectiveTokens;
+      byDay[dayKey].totalTokens += ev.totalTokens;
+    }
+    if (convMatched) total.conversations++;
+  }
+
+  return {
+    now,
+    version: APP_VERSION,
+    days,
+    total,
+    byModel,
+    byDay,
   };
 }
 
@@ -594,6 +725,222 @@ function getWidgetPayload() {
     log(`getWidgetPayload error: ${err.message}`);
     return null;
   }
+}
+
+function isPidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return !!(err && err.code === 'EPERM');
+  }
+}
+
+function findLiveDaemonHubs(daemonDir = DAEMON_DIR) {
+  let names = [];
+  try {
+    if (!fs.existsSync(daemonDir)) return [];
+    names = fs.readdirSync(daemonDir).filter((n) => /^hub_.*\.json$/i.test(n));
+  } catch {
+    return [];
+  }
+
+  const withMtime = [];
+  for (const name of names) {
+    const full = path.join(daemonDir, name);
+    try {
+      const st = fs.statSync(full);
+      withMtime.push({ full, mtimeMs: st.mtimeMs });
+    } catch {}
+  }
+  withMtime.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  const hubs = [];
+  const seenPids = new Set();
+  for (const item of withMtime.slice(0, 20)) {
+    let j;
+    try {
+      j = JSON.parse(fs.readFileSync(item.full, 'utf8'));
+    } catch {
+      continue;
+    }
+    const pid = Number(j && j.pid);
+    const csrfToken = typeof (j && j.csrfToken) === 'string' ? j.csrfToken : '';
+    const httpsPort = Number(j && j.httpsPort) || 0;
+    const httpPort = Number(j && j.httpPort) || 0;
+    if (!csrfToken || (!httpsPort && !httpPort)) continue;
+    if (!isPidAlive(pid) || seenPids.has(pid)) continue;
+    seenPids.add(pid);
+    hubs.push({ pid, httpsPort, httpPort, csrfToken, file: item.full });
+  }
+  return hubs;
+}
+
+function postLocalDaemonJson(port, scheme, csrfToken, method, bodyObj, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(bodyObj || {});
+    const lib = scheme === 'https' ? https : http;
+    const req = lib.request(
+      {
+        hostname: '127.0.0.1',
+        port,
+        path: `/exa.language_server_pb.LanguageServerService/${method}`,
+        method: 'POST',
+        timeout: timeoutMs,
+        rejectUnauthorized: false,
+        headers: {
+          'X-Codeium-Csrf-Token': csrfToken,
+          'Connect-Protocol-Version': '1',
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (res) => {
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          raw += chunk;
+          if (raw.length > 512 * 1024) {
+            req.destroy();
+            reject(new Error('Daemon response too large'));
+          }
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(raw ? JSON.parse(raw) : {});
+            } catch (err) {
+              reject(err);
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode || 0}`));
+          }
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy(new Error('Daemon RPC timeout'));
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function callDaemonRpc(hub, method, body = {}, timeoutMs = 5000) {
+  const attempts = [];
+  if (hub.httpsPort) attempts.push(['https', hub.httpsPort]);
+  if (hub.httpPort) attempts.push(['http', hub.httpPort]);
+  for (const [scheme, port] of attempts) {
+    try {
+      return await postLocalDaemonJson(port, scheme, hub.csrfToken, method, body, timeoutMs);
+    } catch {}
+  }
+  return null;
+}
+
+function parseDaemonQuotaSummary(raw) {
+  const summary = (raw && raw.response) || raw;
+  const groups = summary && Array.isArray(summary.groups) ? summary.groups : [];
+  if (groups.length === 0) return null;
+
+  const geminiGroup =
+    groups.find((g) => {
+      const text = `${g && g.displayName ? g.displayName : ''} ${g && g.description ? g.description : ''}`.toLowerCase();
+      return text.includes('gemini');
+    }) || groups[0];
+
+  const buckets = geminiGroup && Array.isArray(geminiGroup.buckets) ? geminiGroup.buckets : [];
+  let fiveHour = null;
+  let weekly = null;
+
+  for (const b of buckets) {
+    if (!b || typeof b !== 'object') continue;
+    const rem = b.remainingFraction === null || b.remainingFraction === undefined
+      ? 1.0
+      : Number(b.remainingFraction);
+    if (!Number.isFinite(rem)) continue;
+    const usedPct = Math.max(0, Math.min(100, Math.round((1 - rem) * 100)));
+    const resetsAt =
+      typeof b.resetTime === 'string' && Number.isFinite(Date.parse(b.resetTime))
+        ? b.resetTime
+        : null;
+    const win = String(b.window || '').toLowerCase();
+    const label = String(b.displayName || '').toLowerCase();
+
+    if (!fiveHour && (win === '5h' || /5\s*h|5[\s-]*hour/i.test(label))) {
+      fiveHour = { percent: usedPct, resetsAt, label: b.displayName || '5h' };
+    } else if (!weekly && (win === 'weekly' || /week|7[\s-]*day/i.test(label))) {
+      weekly = { percent: usedPct, resetsAt, label: b.displayName || 'Weekly' };
+    }
+  }
+
+  if (!fiveHour && !weekly) return null;
+  return { fiveHour, weekly };
+}
+
+let lastDaemonSyncAttempt = 0;
+let lastDaemonQuotaFp = '';
+let daemonSyncInFlight = null;
+
+async function syncQuotasFromLocalDaemon({ force = false, daemonDir = DAEMON_DIR, persist = true } = {}) {
+  const now = Date.now();
+  const cooldown = force ? 5_000 : 90_000;
+  if (persist && now - lastDaemonSyncAttempt < cooldown) {
+    return { ok: false, skipped: true };
+  }
+  if (daemonSyncInFlight) return daemonSyncInFlight;
+
+  const run = async () => {
+    if (persist) lastDaemonSyncAttempt = Date.now();
+    const hubs = findLiveDaemonHubs(daemonDir);
+    if (hubs.length === 0) return { ok: false, reason: 'no_live_hub' };
+
+    for (const hub of hubs) {
+      const resp = await callDaemonRpc(hub, 'RetrieveUserQuotaSummary', { forceRefresh: true });
+      const parsed = parseDaemonQuotaSummary(resp);
+      if (!parsed) continue;
+
+      const officialQuotas = {
+        fiveHour: parsed.fiveHour,
+        weekly: parsed.weekly,
+        capturedAt: new Date().toISOString(),
+        source: 'ide-daemon',
+      };
+
+      if (persist) {
+        const prev = getState().officialQuotas || {};
+        const merged = {
+          fiveHour: parsed.fiveHour || prev.fiveHour || null,
+          weekly: parsed.weekly || prev.weekly || null,
+          capturedAt: officialQuotas.capturedAt,
+          source: 'ide-daemon',
+        };
+        saveState({ officialQuotas: merged });
+        const fp = JSON.stringify({
+          f: merged.fiveHour && [merged.fiveHour.percent, merged.fiveHour.resetsAt],
+          w: merged.weekly && [merged.weekly.percent, merged.weekly.resetsAt],
+        });
+        if (fp !== lastDaemonQuotaFp) {
+          lastDaemonQuotaFp = fp;
+          log(
+            `Synced quotas from local IDE daemon: 5h=${merged.fiveHour ? merged.fiveHour.percent + '%' : 'n/a'}, week=${merged.weekly ? merged.weekly.percent + '%' : 'n/a'}`
+          );
+        }
+        return { ok: true, officialQuotas: merged };
+      }
+
+      return { ok: true, officialQuotas };
+    }
+
+    return { ok: false, reason: 'no_quota_response' };
+  };
+
+  daemonSyncInFlight = run().finally(() => {
+    daemonSyncInFlight = null;
+  });
+  return daemonSyncInFlight;
 }
 
 // Self-healing loader guard: keeps our tiny loader attached inside antigravity-features-v2/localization_injected.js
@@ -661,7 +1008,69 @@ function isAllowedOrigin(origin) {
 }
 
 function createHttpServer() {
-  return http.createServer(async (req, res) => {
+  const sseClients = new Set();
+  let broadcastTimer = null;
+  let brainWatcher = null;
+
+  const pushToClient = (client) => {
+    try {
+      const data = collectAllMetrics(client.convId);
+      const w = getWidgetPayload();
+      data.widgetHash = w ? w.hash : null;
+      client.res.write(`event: status\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch {
+      sseClients.delete(client);
+      try { client.res.end(); } catch {}
+    }
+  };
+
+  const broadcastNow = () => {
+    if (sseClients.size === 0) return;
+    lastAggregateAt = 0; // force fresh aggregate on push
+    for (const client of Array.from(sseClients)) {
+      pushToClient(client);
+    }
+  };
+
+  const scheduleBroadcast = () => {
+    if (sseClients.size === 0 || broadcastTimer) return;
+    broadcastTimer = setTimeout(() => {
+      broadcastTimer = null;
+      broadcastNow();
+    }, 250);
+    if (typeof broadcastTimer.unref === 'function') broadcastTimer.unref();
+  };
+
+  const ensureBrainWatcher = () => {
+    if (brainWatcher || !fs.existsSync(BRAIN_DIR)) return;
+    try {
+      brainWatcher = fs.watch(BRAIN_DIR, { recursive: true }, (_eventType, filename) => {
+        if (!filename || String(filename).endsWith('transcript.jsonl')) {
+          scheduleBroadcast();
+        }
+      });
+      brainWatcher.on('error', () => {
+        try { brainWatcher.close(); } catch {}
+        brainWatcher = null;
+      });
+    } catch {
+      // Recursive fs.watch may not be supported on older Linux kernels; fallback polling still works
+      brainWatcher = null;
+    }
+  };
+
+  const heartbeatTimer = setInterval(() => {
+    for (const client of Array.from(sseClients)) {
+      try {
+        client.res.write(': ping\n\n');
+      } catch {
+        sseClients.delete(client);
+      }
+    }
+  }, 25_000);
+  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+
+  const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin;
     const originAllowed = isAllowedOrigin(origin);
 
@@ -693,6 +1102,41 @@ function createHttpServer() {
       const w = getWidgetPayload();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, version: APP_VERSION, widgetHash: w ? w.hash : null }));
+      return;
+    }
+
+    if (pathname === '/api/events') {
+      if (!originAllowed) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: 'Forbidden origin' }));
+        return;
+      }
+      const convId = urlObj.searchParams.get('conversationId') || '';
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+      });
+      const client = { res, convId };
+      sseClients.add(client);
+      ensureBrainWatcher();
+      pushToClient(client);
+      req.on('close', () => {
+        sseClients.delete(client);
+      });
+      return;
+    }
+
+    if (pathname === '/api/usage-summary') {
+      try {
+        const days = urlObj.searchParams.get('days') || '7';
+        const summary = collectUsageSummary(days);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(summary));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
       return;
     }
 
@@ -735,10 +1179,26 @@ function createHttpServer() {
           delete patch.clearOfficialQuotas;
         }
         const nextCfg = saveConfig(patch);
+        broadcastNow();
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, config: nextCfg }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (pathname === '/api/quota-refresh' && req.method === 'POST') {
+      try {
+        const result = await syncQuotasFromLocalDaemon({ force: true });
+        if (result && result.ok) {
+          broadcastNow();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: !!(result && result.ok), officialQuotas: (result && result.officialQuotas) || getState().officialQuotas || null }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: false, error: err.message }));
       }
       return;
@@ -773,6 +1233,7 @@ function createHttpServer() {
           },
         });
         log(`Synced official quotas: 5h=${nextFive ? nextFive.percent + '%' : 'n/a'}, week=${nextWeek ? nextWeek.percent + '%' : 'n/a'}`);
+        broadcastNow();
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ ok: true, officialQuotas: nextState.officialQuotas }));
       } catch (err) {
@@ -785,6 +1246,22 @@ function createHttpServer() {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'Not found' }));
   });
+
+  server.on('close', () => {
+    clearInterval(heartbeatTimer);
+    if (broadcastTimer) clearTimeout(broadcastTimer);
+    if (brainWatcher) {
+      try { brainWatcher.close(); } catch {}
+      brainWatcher = null;
+    }
+    for (const client of Array.from(sseClients)) {
+      try { client.res.end(); } catch {}
+      sseClients.delete(client);
+    }
+  });
+
+  server.broadcastNow = broadcastNow;
+  return server;
 }
 
 function startHttpServer(port = PORT, host = HOST) {
@@ -802,6 +1279,16 @@ function startHttpServer(port = PORT, host = HOST) {
     log(`Statusline HTTP server listening on http://${host}:${port}`);
     ensureLoaderAttached();
     setInterval(ensureLoaderAttached, 60_000).unref();
+    // Auto-sync official quotas directly from AntiGravity's local daemon (hub_*.json)
+    const runDaemonSync = (force) => {
+      syncQuotasFromLocalDaemon({ force })
+        .then((r) => {
+          if (r && r.ok && typeof server.broadcastNow === 'function') server.broadcastNow();
+        })
+        .catch(() => {});
+    };
+    setTimeout(() => runDaemonSync(true), 1500).unref();
+    setInterval(() => runDaemonSync(false), 90_000).unref();
   });
 
   return server;
@@ -861,13 +1348,26 @@ function startMcpStdio() {
           tools: [
             {
               name: 'get_statusline_metrics',
-              description: 'Get live AntiGravity statusline metrics: current conversation context window usage, cache hit rate, compactions, rolling 5h/7d local token usage, and synced official quotas.',
+              description: 'Get live AntiGravity statusline metrics: current conversation context window usage, cache hit rate, compactions, rolling 5h/7d local token usage, burn rate, active subagents, and synced official quotas.',
               inputSchema: {
                 type: 'object',
                 properties: {
                   conversationId: {
                     type: 'string',
                     description: 'Optional conversation UUID. Defaults to the most recently active conversation.',
+                  },
+                },
+              },
+            },
+            {
+              name: 'get_usage_summary',
+              description: 'Get aggregated local token usage summary over the last N days (1-30) broken down by model and by day.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  days: {
+                    type: 'number',
+                    description: 'Number of days to aggregate (1-30). Defaults to 7.',
                   },
                 },
               },
@@ -888,6 +1388,18 @@ function startMcpStdio() {
           id,
           result: {
             content: [{ type: 'text', text: JSON.stringify(metrics, null, 2) }],
+          },
+        });
+        return;
+      }
+      if (toolName === 'get_usage_summary') {
+        const days = (params.arguments && params.arguments.days) || 7;
+        const summary = collectUsageSummary(days);
+        send({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }],
           },
         });
         return;
@@ -939,8 +1451,14 @@ export {
   resolveModelWindowInfo,
   resolveModelWindow,
   formatModelLabel,
+  formatModelShort,
   parseTranscriptFile,
   clearTranscriptCache,
+  collectAllMetrics,
+  collectUsageSummary,
+  findLiveDaemonHubs,
+  parseDaemonQuotaSummary,
+  syncQuotasFromLocalDaemon,
   createHttpServer,
   startHttpServer,
   startMcpStdio,

@@ -42,7 +42,12 @@
       showRow1: 'Show 1st row (Context)',
       hideCache: 'Hide cache hit (%)',
       showCache: 'Show cache hit (%)',
+      hideModel: 'Hide model',
+      showModel: 'Show model',
       resetThresholds: 'Reset thresholds',
+      compactHintTip: 'Context is getting full — consider running /compact',
+      burnRateTip: (rate, eta) => eta ? `Rate: ~${rate}/h · ~${eta} to limit` : `Rate: ~${rate}/h`,
+      subagentsTip: (n) => `${n} active parallel/subagent session(s)`,
       syncedNote: (ago) => `Quotas synced ${ago} ago.`,
       localNote: 'Local token estimate active until quotas sync.',
       official5hTip: (ago) => `5h quota (synced ${ago} ago)`,
@@ -82,7 +87,12 @@
       showRow1: 'Показать 1-ю строку (Контекст)',
       hideCache: 'Скрыть кеш (%)',
       showCache: 'Показать кеш (%)',
+      hideModel: 'Скрыть модель',
+      showModel: 'Показать модель',
       resetThresholds: 'Сбросить пороги',
+      compactHintTip: 'Контекст почти заполнен — рекомендуется выполнить /compact',
+      burnRateTip: (rate, eta) => eta ? `Темп: ~${rate}/ч · ~${eta} до лимита` : `Темп: ~${rate}/ч`,
+      subagentsTip: (n) => `Активных параллельных/субагент-сессий: ${n}`,
       syncedNote: (ago) => `Квоты синхронизированы ${ago} назад.`,
       localNote: 'Локальный расчёт токенов до синхронизации квот.',
       official5hTip: (ago) => `5-часовая квота (синхр. ${ago} назад)`,
@@ -122,7 +132,12 @@
       showRow1: 'Показати 1-й рядок (Контекст)',
       hideCache: 'Приховати кеш (%)',
       showCache: 'Показати кеш (%)',
+      hideModel: 'Приховати модель',
+      showModel: 'Показати модель',
       resetThresholds: 'Скинути пороги',
+      compactHintTip: 'Контекст майже заповнений — радимо виконати /compact',
+      burnRateTip: (rate, eta) => eta ? `Темп: ~${rate}/г · ~${eta} до ліміту` : `Темп: ~${rate}/г`,
+      subagentsTip: (n) => `Активних паралельних/субагент-сесій: ${n}`,
       syncedNote: (ago) => `Квоти синхронізовано ${ago} тому.`,
       localNote: 'Локальний підрахунок токенів до синхронізації квот.',
       official5hTip: (ago) => `5-годинна квота (синхр. ${ago} тому)`,
@@ -279,6 +294,37 @@
     }
     .agy-sl-dot {
       opacity: 0.55;
+    }
+    .agy-sl-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10.5px;
+      font-weight: 500;
+      line-height: 1.3;
+      background: var(--secondary, rgba(128, 128, 128, 0.16));
+      color: var(--foreground, #e8eaed);
+      border: 1px solid var(--border, rgba(128, 128, 128, 0.22));
+      flex-shrink: 0;
+    }
+    .agy-sl-compact-hint {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10.5px;
+      font-weight: 600;
+      line-height: 1.3;
+      background: rgba(224, 160, 48, 0.16);
+      color: #e0a030;
+      border: 1px solid rgba(224, 160, 48, 0.4);
+      flex-shrink: 0;
+    }
+    .agy-sl-compact-hint.is-danger {
+      background: rgba(229, 72, 77, 0.16);
+      color: #e5484d;
+      border-color: rgba(229, 72, 77, 0.45);
     }
     .agy-sl-actions {
       margin-left: auto;
@@ -479,6 +525,9 @@
   let lastLayoutMetricsKey = '';
   let popoverOpen = false;
   let lastQuotaFingerprint = '';
+  let eventSource = null;
+  let sseConnected = false;
+  let sseConvId = '';
 
   function setPopoverOpen(card, next) {
     popoverOpen = !!next;
@@ -552,6 +601,15 @@
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function fmtMinutes(mins, s) {
+    if (!Number.isFinite(mins) || mins <= 0) return '';
+    const mTotal = Math.round(mins);
+    if (mTotal < 60) return `${mTotal}${s.unitM}`;
+    const h = Math.floor(mTotal / 60);
+    const m = mTotal % 60;
+    return m > 0 ? `${h}${s.unitH} ${m}${s.unitM}` : `${h}${s.unitH}`;
   }
 
   function fmtAgo(iso, nowMs, s) {
@@ -842,6 +900,7 @@
     const oq = data.officialQuotas || null;
     const showFirstRow = cfg.showFirstRow !== false;
     const showCache = cfg.showCache !== false;
+    const showModelBadge = cfg.showModelBadge !== false;
     const hasOfficial5h = !!(oq && oq.fiveHour);
     const hasOfficialWeek = !!(oq && oq.weekly);
     const syncedAgo = oq && oq.capturedAt ? fmtAgo(oq.capturedAt, nowMs, s) : '';
@@ -889,7 +948,10 @@
         </div>
         <div class="agy-sl-pop-row">
           <button class="agy-sl-pop-btn" style="flex:1" id="agy-sl-toggle-cache">${escapeHtml(showCache ? s.hideCache : s.showCache)}</button>
-          <button class="agy-sl-pop-btn" id="agy-sl-reset-thresh">${escapeHtml(s.resetThresholds)}</button>
+          <button class="agy-sl-pop-btn" style="flex:1" id="agy-sl-toggle-model">${escapeHtml(showModelBadge ? s.hideModel : s.showModel)}</button>
+        </div>
+        <div class="agy-sl-pop-row">
+          <button class="agy-sl-pop-btn" style="width:100%" id="agy-sl-reset-thresh">${escapeHtml(s.resetThresholds)}</button>
         </div>
         <div class="agy-sl-pop-note">${escapeHtml(statusNote)}</div>
       </div>
@@ -929,6 +991,14 @@
       toggleCacheBtn.onclick = async (e) => {
         e.stopPropagation();
         await postConfig({ showCache: !showCache }, true);
+      };
+    }
+
+    const toggleModelBtn = popHost.querySelector('#agy-sl-toggle-model');
+    if (toggleModelBtn) {
+      toggleModelBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await postConfig({ showModelBadge: !showModelBadge }, true);
       };
     }
 
@@ -1052,6 +1122,9 @@
     const ctxColor = barColorClass(ctxPct, th.context);
 
     const metaParts = [];
+    if (ctx && cfg.showModelBadge !== false && ctx.modelShort) {
+      metaParts.push(`<span class="agy-sl-badge" title="${escapeHtml(ctx.modelLabel || ctx.model || '')}">${escapeHtml(ctx.modelShort)}</span>`);
+    }
     if (ctx && cfg.showCache !== false && ctx.cacheHit !== null && ctx.cacheHit !== undefined) {
       const cacheCls = cacheColorClass(ctx.cacheHit, th.cache);
       metaParts.push(`<span class="agy-sl-dot">·</span><span class="agy-sl-detail${cacheCls ? ' ' + cacheCls : ''}">${s.cache} ${ctx.cacheHit}%</span>`);
@@ -1059,6 +1132,18 @@
     if (ctx && ctx.compactions && ctx.compactions.count > 0) {
       metaParts.push(
         `<span class="agy-sl-dot">·</span><span class="agy-sl-detail">${s.compacts}: ${ctx.compactions.count}</span>`
+      );
+    }
+    if (ctx && ctxPct >= Math.max(85, th.context.warn)) {
+      const hintDanger = ctxPct >= th.context.danger ? ' is-danger' : '';
+      metaParts.push(
+        `<span class="agy-sl-compact-hint${hintDanger}" title="${escapeHtml(s.compactHintTip)}">/compact</span>`
+      );
+    }
+    const activeSubs = data.subagents && data.subagents.activeCount > 0 ? data.subagents.activeCount : 0;
+    if (activeSubs > 0) {
+      metaParts.push(
+        `<span class="agy-sl-badge" title="${escapeHtml(s.subagentsTip(activeSubs))}">+${activeSubs}</span>`
       );
     }
 
@@ -1081,9 +1166,14 @@
 
     const syncedAgo = oq && oq.capturedAt ? fmtAgo(oq.capturedAt, nowMs, s) : '';
 
-    const fiveTooltip = hasOfficial5h
+    const burnRate = localU.fiveHour && localU.fiveHour.burnRate;
+    const burnNote = burnRate && burnRate.tokensPerHour > 0
+      ? ` · ${s.burnRateTip(fmtTokens(burnRate.tokensPerHour), burnRate.minutesToLimit ? fmtMinutes(burnRate.minutesToLimit, s) : '')}`
+      : '';
+
+    const fiveTooltip = (hasOfficial5h
       ? s.official5hTip(syncedAgo)
-      : s.local5hTip(fmtTokens(localU.fiveHour?.effectiveTokens || 0), fmtTokens(localU.fiveHour?.totalTokens || 0));
+      : s.local5hTip(fmtTokens(localU.fiveHour?.effectiveTokens || 0), fmtTokens(localU.fiveHour?.totalTokens || 0))) + burnNote;
 
     const weekTooltip = hasOfficialWeek
       ? s.officialWkTip(syncedAgo)
@@ -1184,7 +1274,15 @@
       lastLayoutMetricsKey = '';
 
       const refBtn = rowsHost.querySelector('#agy-sl-refresh');
-      if (refBtn) refBtn.onclick = (e) => { e.stopPropagation(); fetchStatusAndRender(); };
+      if (refBtn) {
+        refBtn.onclick = async (e) => {
+          e.stopPropagation();
+          try {
+            await fetch(`${API_BASE}/api/quota-refresh`, { method: 'POST' });
+          } catch {}
+          fetchStatusAndRender();
+        };
+      }
 
       const colBtn = rowsHost.querySelector('#agy-sl-collapse');
       if (colBtn) colBtn.onclick = (e) => { e.stopPropagation(); setPopoverOpen(card, false); postConfig({ collapsed: true }); };
@@ -1318,6 +1416,11 @@
 
   function scanSettingsDomForQuotas() {
     if (disposed || document.hidden) return;
+    // Skip DOM scanning when official quotas are freshly synced from the local IDE daemon
+    if (lastData && lastData.officialQuotas && lastData.officialQuotas.source === 'ide-daemon' && lastData.officialQuotas.capturedAt) {
+      const ageMs = Date.now() - Date.parse(lastData.officialQuotas.capturedAt);
+      if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 5 * 60_000) return;
+    }
     try {
       const roots = findSettingsScanRoots();
       if (roots.length === 0) return;
@@ -1408,6 +1511,45 @@
     setPopoverOpen(card, false);
   }
 
+  function disconnectEventStream() {
+    sseConnected = false;
+    sseConvId = '';
+    if (eventSource) {
+      try { eventSource.close(); } catch {}
+      eventSource = null;
+    }
+  }
+
+  function connectEventStream() {
+    if (disposed || document.hidden || typeof EventSource === 'undefined') return;
+    const convId = detectConversationId();
+    if (eventSource && sseConvId === convId && eventSource.readyState !== 2) return;
+    disconnectEventStream();
+    sseConvId = convId;
+    const qs = convId ? `?conversationId=${encodeURIComponent(convId)}` : '';
+    try {
+      const es = new EventSource(`${API_BASE}/api/events${qs}`);
+      eventSource = es;
+      es.addEventListener('open', () => {
+        if (eventSource === es) sseConnected = true;
+      });
+      es.addEventListener('status', (ev) => {
+        if (disposed || eventSource !== es) return;
+        sseConnected = true;
+        try {
+          const data = JSON.parse(ev.data);
+          lastData = data;
+          render(data, false);
+        } catch {}
+      });
+      es.onerror = () => {
+        if (eventSource === es) sseConnected = false;
+      };
+    } catch {
+      sseConnected = false;
+    }
+  }
+
   function scheduleRemount() {
     if (remountTimer || disposed || !lastData) return;
     remountTimer = setTimeout(() => {
@@ -1421,16 +1563,30 @@
   }
 
   function onVisibilityChange() {
-    if (!document.hidden && !disposed) {
+    if (disposed) return;
+    if (document.hidden) {
+      disconnectEventStream();
+    } else {
+      connectEventStream();
       fetchStatusAndRender();
     }
   }
 
   injectHostStyle();
   fetchStatusAndRender();
+  connectEventStream();
 
   pollTimer = setInterval(() => {
-    if (!document.hidden) fetchStatusAndRender();
+    if (document.hidden) return;
+    const curConvId = detectConversationId();
+    if (sseConnected) {
+      if (curConvId !== sseConvId) {
+        connectEventStream();
+      }
+      return;
+    }
+    fetchStatusAndRender();
+    connectEventStream();
   }, 3000);
   mountTimer = setInterval(() => {
     if (document.hidden || !lastData) return;
@@ -1465,6 +1621,7 @@
   window.__ag_statusline_dispose = () => {
     disposed = true;
     window.__ag_statusline_popover_open = false;
+    disconnectEventStream();
     if (pollTimer) clearInterval(pollTimer);
     if (mountTimer) clearInterval(mountTimer);
     if (settingsScanTimer) clearInterval(settingsScanTimer);

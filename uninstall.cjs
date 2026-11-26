@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { findAntigravityAsar, isAsarPatched, unpatchAsar } = require('./asar-patcher.cjs');
 
 const home = os.homedir();
 const installDir = __dirname;
@@ -42,6 +43,19 @@ if (fs.existsSync(bundlePath)) {
   } catch (err) {
     console.error('Failed to clean bundle:', err.message);
   }
+}
+
+// 3. Remove standalone hook from AntiGravity app.asar if present
+try {
+  const asarPath = findAntigravityAsar();
+  if (asarPath && isAsarPatched(asarPath)) {
+    const res = unpatchAsar(asarPath);
+    if (res.status === 'unpatched') {
+      console.log('Removed standalone statusline hook from', asarPath);
+    }
+  }
+} catch (err) {
+  console.error('Failed to unpatch app.asar:', err.message);
 }
 
 console.log('✅ antigravity-statusline uninstalled. Restart AntiGravity or wait 4s for hot-reload.');

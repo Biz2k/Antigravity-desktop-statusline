@@ -2,12 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
+const { findAntigravityAsar, patchAsar } = require('./asar-patcher.cjs');
 
 const home = os.homedir();
 const installDir = __dirname;
 const serverPath = path.join(installDir, 'server.mjs').replace(/\\/g, '/');
 const loaderPath = path.join(installDir, 'loader.js');
 const lockFile = path.join(installDir, 'uninstalling.lock');
+const forceStandalone = process.argv.includes('--standalone');
 
 // Clear any previous uninstall lock
 if (fs.existsSync(lockFile)) {
@@ -38,12 +40,13 @@ for (const cfgPath of mcpPaths) {
   console.log('[OK] Registered MCP server in:', cfgPath);
 }
 
-// 2. Attach loader into antigravity-features-v2 if present
+// 2. Attach UI loader: use antigravity-features-v2 if present (unless --standalone),
+//    otherwise patch Antigravity's app.asar directly (zero external dependencies).
 const fv2Dir = path.join(home, '.antigravity-features-v2');
 const fv2Bundle = path.join(fv2Dir, 'localization_injected.js');
 const loaderSnippet = fs.readFileSync(loaderPath, 'utf8').trim();
 
-if (fs.existsSync(fv2Bundle)) {
+if (!forceStandalone && fs.existsSync(fv2Bundle)) {
   const current = fs.readFileSync(fv2Bundle, 'utf8');
   if (!current.includes('ANTIGRAVITY_STATUSLINE_LOADER_V1')) {
     const eol = current.includes('\r\n') ? '\r\n' : '\n';
@@ -70,9 +73,26 @@ if (fs.existsSync(fv2Bundle)) {
     }
   }
 } else {
-  console.log('[INFO] antigravity-features-v2 not found at ~/.antigravity-features-v2.');
-  console.log('[INFO] MCP server is registered and ready on http://127.0.0.1:39229.');
-  console.log('[INFO] For automatic UI injection in AntiGravity 2.0 Desktop, install antigravity-features-v2 first or inject loader.js into app.asar dist/preload.js.');
+  const asarPath = findAntigravityAsar();
+  if (asarPath) {
+    try {
+      const res = patchAsar(asarPath);
+      if (res.status === 'already_patched') {
+        console.log('[OK] Standalone statusline hook already present in:', asarPath);
+      } else {
+        console.log('[OK] Patched AntiGravity app.asar directly (standalone mode):', asarPath);
+        if (res.backupPath) console.log('[OK] Clean backup saved at:', res.backupPath);
+      }
+    } catch (err) {
+      console.warn('[WARN] Standalone app.asar patch could not be applied:', err.message);
+      console.warn('[INFO] Close AntiGravity completely (including system tray) and re-run:');
+      console.warn(`       node "${path.join(installDir, 'install.cjs')}"`);
+    }
+  } else {
+    console.log('[INFO] AntiGravity app.asar not found automatically.');
+    console.log('[INFO] MCP server is registered and ready on http://127.0.0.1:39229.');
+    console.log('[INFO] To patch manually, set ANTIGRAVITY_ASAR_PATH and re-run install.cjs.');
+  }
 }
 
 console.log('\n✅ Installation complete! Restart AntiGravity (including tray exit) to activate.');

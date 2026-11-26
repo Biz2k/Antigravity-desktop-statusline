@@ -2,7 +2,7 @@
 
 🌐 [🇬🇧 English](README.md) | [🇷🇺 Русский](README.ru.md) | **🇺🇦 Українська**
 
-[![Version](https://img.shields.io/badge/version-v1.2.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.2.0)
+[![Version](https://img.shields.io/badge/version-v1.3.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.3.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -19,17 +19,17 @@
 1. **Індикатор контекстного вікна в реальному часі (`Контекст`)**
    - Читає локальний транскрипт активного діалогу (`~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`) із кешуванням за `mtime` + `size`.
    - Показує точну кількість використаних токенів і розмір вікна активної моделі (`512k` для Gemini 4 Neon, `1M` для Gemini 4 Carbon / Argon / Hydrogen / Gemini 3.x / Claude 5.5, `200k` для Claude 4.6, `128k` для GPT-OSS).
-   - Відображає **відсоток влучань у кеш промпту** (`кеш 99%`) та лічильник **стиснень контексту**.
+   - Відображає **відсоток влучань у кеш промпту** (`кеш 99%`), компактний **бейдж моделі** (`Neon`, `Opus 4.6` тощо), лічильник **стиснень контексту**, м'яку підказку **`/compact`** при високому заповненні та індикатор активних **субагентів** (`+N`).
    - Можна **приховати 1-й рядок (`Контекст`)**, залишивши лише рядок лімітів `5 годин` і `Тиждень`.
 
 2. **Індикатори 5-годинного та тижневого лімітів (`5 годин` / `Тиждень`)**
-   - Автоматично синхронізує квоти плану (`5 годин` і `Тиждень`), перераховує залишок `%` у витрату `%` і веде живий зворотний відлік до скидання (`↻ 3г 42хв (04:08)`, `↻ 6д 22г`).
+   - Автоматично синхронізує квоти плану (`5 годин` і `Тиждень`) напряму з локального демона AntiGravity (`~/.gemini/antigravity/daemon/hub_*.json`) кожні 90 с та за кнопкою `↻` — **без потреби відкривати «Налаштування → Моделі»** — веде живий зворотний відлік до скидання (`↻ 3г 42хв (04:08)`, `↻ 6д 22г`) і показує **темп витрат (burn rate) та прогноз** у підказці 5-годинного ліміту.
    - **Динамічні смужки однакової ширини**: верстка на `ResizeObserver` тримає смужки `5 годин` і `Тиждень` строго однакової довжини та плавно масштабує їх разом із шириною вікна (перенесення на 2 рядки відбувається лише на дуже вузьких вікнах).
    - Індивідуальні **пороги зміни кольору (Жовтий / Червоний)** для кожного показника (**Контекст**, **Кеш (`<`)**, **5 годин**, **Тиждень**).
 
-3. **Нуль залежностей, Shadow DOM і Hot-Reload**
-   - Чистий Node.js ESM (`>= 18`) — **не потребує `npm install`**.
-   - Працює як легкий фоновий MCP-сервер (`antigravity-statusline` з інструментом `get_statusline_metrics`) + локальний HTTP-сервер на `127.0.0.1:39229`.
+3. **Нуль залежностей, автономна ін'єкція, SSE і Shadow DOM**
+   - Чистий Node.js (`>= 18`) — **не потребує `npm install` і сторонніх модів** (вбудований zero-dependency патчер `app.asar` із резервною копією та перерахунком SHA-256 `integrity`; за наявності `antigravity-features-v2` працює через нього без конфліктів).
+   - Працює як легкий фоновий MCP-сервер (`antigravity-statusline` з інструментами `get_statusline_metrics` і `get_usage_summary`) + локальний HTTP/SSE-сервер на `127.0.0.1:39229` із миттєвим пушем через `fs.watch`.
    - Ізольований всередині **Shadow DOM** — сторонні перекладачі (наприклад, `antigravity-features-v2`) не підміняють підписи всередині статус-бару, водночас усі змінні темної/світлої теми AntiGravity успадковуються автоматично.
    - Вбудований перемикач мов **`EN | RU | UA`** (за замовчуванням — **англійська**) та миттєве застосування налаштувань.
    - При наведенні праворуч з'являються міні-кнопки: **Оновити (`↻`)**, **Згорнути (`▾`)** та **Налаштування (`⚙`)**.
@@ -51,6 +51,7 @@
 | `collapsed` | `false` | Компактний однорядковий режим |
 | `showCache` | `true` | Показувати відсоток влучань у кеш (`кеш XX%`) |
 | `showFirstRow` | `true` | Показувати або приховувати 1-й рядок (`Контекст`) |
+| `showModelBadge` | `true` | Показувати або приховувати компактний бейдж моделі (`Neon`, `Opus 4.6` тощо) |
 | `thresholds` | `80/95`, кеш `50/20` | Пороги зміни кольору (жовтий / червоний, %) для `context`, `cache` (`<`), `fiveHour` і `weekly` |
 
 ---
@@ -60,7 +61,7 @@
 ### Вимоги
 - **Node.js 18+** ([nodejs.org](https://nodejs.org/))
 - **Google AntiGravity 2.0 Desktop**
-- **Потрібно для автоматичної UI-ін'єкції:** [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) (забезпечує ін'єкцію в Electron DOM і hot-reload; завантажувач статус-бару автоматично відновлюється після оновлень `antigravity-features-v2`). Без нього `install.cjs` зареєструє MCP-сервер і локальний HTTP API на `127.0.0.1:39229`, але `loader.js` потрібно буде вбудовувати в `app.asar` вручну.
+- **Сторонні моди не потрібні:** `install.cjs` сам патчить `app.asar` AntiGravity напряму (з резервною копією `app.asar.bak` і перерахунком SHA-256 `integrity`). Якщо [`antigravity-features-v2`](https://github.com/WiseYaroslav28/antigravity-features-v2) вже встановлено, завантажувач підключається через `localization_injected.js` без конфліктів (прапорець `--standalone` примусово вмикає прямий патч `app.asar`).
 
 ### Windows (PowerShell — одним рядком)
 ```powershell
@@ -86,10 +87,11 @@ node ~/.antigravity-statusline/install.cjs
 
 | Файл | Призначення |
 | :--- | :--- |
-| [`server.mjs`](server.mjs) | MCP-сервер (`get_statusline_metrics`) + локальний HTTP API (`http://127.0.0.1:39229`) + парсер транскриптів + автовідновлення завантажувача |
-| [`widget.js`](widget.js) | Shadow DOM віджет із hot-reload над полем введення чату + адаптивні смужки `ResizeObserver` + вікно налаштувань із миттєвим застосуванням |
+| [`server.mjs`](server.mjs) | MCP-сервер (`get_statusline_metrics`, `get_usage_summary`) + локальний HTTP/SSE API (`http://127.0.0.1:39229`) + інкрементальний парсер транскриптів |
+| [`widget.js`](widget.js) | Shadow DOM віджет із hot-reload над полем введення чату + SSE-оновлення + адаптивні смужки `ResizeObserver` + вікно налаштувань |
 | [`loader.js`](loader.js) | Легкий завантажувач для оболонки AntiGravity з перевіркою `widgetHash` через `/health` (не перезавантажується, поки відкриті налаштування) |
-| [`install.cjs`](install.cjs) | Кросплатформений інсталятор (MCP + підключення завантажувача) |
+| [`asar-patcher.cjs`](asar-patcher.cjs) | Автономний zero-dependency патчер `app.asar` (SHA-256 `integrity` + бэкап + чистий відкат + macOS codesign) |
+| [`install.cjs`](install.cjs) | Кросплатформений інсталятор (MCP + автономний патч `app.asar` або підключення до `antigravity-features-v2`) |
 | [`install.ps1`](install.ps1) / [`install.sh`](install.sh) | Однорядкові інсталятори для Windows і macOS/Linux |
 | [`uninstall.cjs`](uninstall.cjs) / [`uninstall.ps1`](uninstall.ps1) / [`uninstall.sh`](uninstall.sh) | Чисте видалення (прибирає MCP-запис, завантажувач і теку проєкту) |
 

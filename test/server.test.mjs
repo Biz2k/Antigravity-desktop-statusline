@@ -17,8 +17,12 @@ import {
   resolveModelWindowInfo,
   resolveModelWindow,
   formatModelLabel,
+  formatModelShort,
   parseTranscriptFile,
   clearTranscriptCache,
+  collectUsageSummary,
+  parseDaemonQuotaSummary,
+  syncQuotasFromLocalDaemon,
   createHttpServer,
 } from '../server.mjs';
 
@@ -384,5 +388,211 @@ test('HTTP server enforces CORS/Origin rules and serves /health and /api/status'
     assert.equal(r8.status, 404);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('formatModelShort produces compact model badges', () => {
+  assert.equal(formatModelShort('gemini-4-neon-medium'), 'Neon');
+  assert.equal(formatModelShort('gemini-4-carbon-high'), 'Carbon');
+  assert.equal(formatModelShort('claude-opus-4-6-xhigh'), 'Opus 4.6');
+  assert.equal(formatModelShort('claude-sonnet-5-5'), 'Sonnet 5.5');
+  assert.equal(formatModelShort('gpt-oss-120b'), 'GPT-OSS');
+  assert.equal(formatModelShort(''), '');
+  assert.equal(formatModelShort(null), '');
+});
+
+test('collectUsageSummary aggregates requests and tokens by model and day within window', () => {
+  clearTranscriptCache();
+  const brainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-brain-'));
+  try {
+    const conv1 = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const conv2 = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const logs1 = path.join(brainDir, conv1, '.system_generated', 'logs');
+    const logs2 = path.join(brainDir, conv2, '.system_generated', 'logs');
+    fs.mkdirSync(logs1, { recursive: true });
+    fs.mkdirSync(logs2, { recursive: true });
+
+    const now = Date.now();
+    const todayIso = new Date(now - 60_000).toISOString();
+    const yestIso = new Date(now - 24 * 3600_000).toISOString();
+    const oldIso = new Date(now - 20 * 24 * 3600_000).toISOString();
+
+    fs.writeFileSync(
+      path.join(logs1, 'transcript.jsonl'),
+      [
+        JSON.stringify({
+          type: 'PLANNER_RESPONSE',
+          created_at: todayIso,
+          model: 'gemini-4-neon-medium',
+          input_tokens: 1000,
+          cache_read_tokens: 4000,
+          output_tokens: 500,
+        }),
+        JSON.stringify({
+          type: 'PLANNER_RESPONSE',
+          created_at: oldIso, // outside 7d window
+          model: 'gemini-4-neon-medium',
+          input_tokens: 9999,
+          cache_read_tokens: 0,
+          output_tokens: 1,
+        }),
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    fs.writeFileSync(
+      path.join(logs2, 'transcript.jsonl'),
+      JSON.stringify({
+        type: 'PLANNER_RESPONSE',
+        created_at: yestIso,
+        model: 'claude-opus-4-6-high',
+        input_tokens: 2000,
+        cache_read_tokens: 8000,
+        output_tokens: 1000,
+      }) + '\n',
+      'utf8'
+    );
+
+    const summary = collectUsageSummary(7, brainDir);
+    assert.equal(summary.days, 7);
+    assert.equal(summary.total.conversations, 2);
+    assert.equal(summary.total.requests, 2);
+    assert.equal(summary.total.effectiveTokens, 4500);
+    assert.equal(summary.total.totalTokens, 16500);
+    assert.equal(summary.byModel['gemini-4-neon-medium'].effectiveTokens, 1500);
+    assert.equal(summary.byModel['claude-opus-4-6-high'].effectiveTokens, 3000);
+    assert.equal(Object.keys(summary.byDay).length, 2);
+  } finally {
+    clearTranscriptCache();
+    fs.rmSync(brainDir, { recursive: true, force: true });
+  }
+});
+
+test('HTTP server serves SSE /api/events and /api/usage-summary with Origin protection', async () => {
+  const server = createHttpServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    // Disallowed origin on /api/events -> 403
+    const badSse = await fetch(`${base}/api/events`, {
+      headers: { Origin: 'https://evil.example' },
+    });
+    assert.equal(badSse.status, 403);
+
+    // Allowed origin on /api/events -> text/event-stream with initial status event
+    const ac = new AbortController();
+    const sseResp = await fetch(`${base}/api/events`, {
+      headers: { Origin: 'vscode-file://vscode-app' },
+      signal: ac.signal,
+    });
+    assert.equal(sseResp.status, 200);
+    assert.match(sseResp.headers.get('content-type') || '', /text\/event-stream/i);
+
+    const reader = sseResp.body.getReader();
+    const decoder = new TextDecoder();
+    let chunkText = '';
+    while (!chunkText.includes('\n\n')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      chunkText += decoder.decode(value, { stream: true });
+    }
+    ac.abort();
+
+    assert.match(chunkText, /^event: status\n/m);
+    const dataLine = chunkText.split('\n').find((l) => l.startsWith('data: '));
+    assert.ok(dataLine);
+    const payload = JSON.parse(dataLine.slice(6));
+    assert.equal(payload.version, APP_VERSION);
+    assert.equal(typeof payload.config.showModelBadge, 'boolean');
+    assert.equal(typeof payload.subagents.activeCount, 'number');
+
+    // GET /api/usage-summary
+    const sumResp = await fetch(`${base}/api/usage-summary?days=3`);
+    assert.equal(sumResp.status, 200);
+    const sum = await sumResp.json();
+    assert.equal(sum.days, 3);
+    assert.ok(sum.total && sum.byModel && sum.byDay);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('parseDaemonQuotaSummary extracts Gemini 5h and weekly buckets accurately', () => {
+  const sample = {
+    response: {
+      groups: [
+        {
+          displayName: 'Claude and GPT models',
+          buckets: [{ window: '5h', remainingFraction: 0.1, resetTime: '2026-11-26T20:00:00Z' }],
+        },
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            { window: 'weekly', remainingFraction: 0.72, resetTime: '2026-12-02T12:00:00Z', displayName: 'Weekly' },
+            { window: '5h', remainingFraction: 0.85, resetTime: '2026-11-26T21:00:00Z', displayName: '5 hours' },
+          ],
+        },
+      ],
+    },
+  };
+  const parsed = parseDaemonQuotaSummary(sample);
+  assert.ok(parsed);
+  assert.equal(parsed.fiveHour.percent, 15);
+  assert.equal(parsed.fiveHour.resetsAt, '2026-11-26T21:00:00Z');
+  assert.equal(parsed.weekly.percent, 28);
+  assert.equal(parsed.weekly.resetsAt, '2026-12-02T12:00:00Z');
+  assert.equal(parseDaemonQuotaSummary({ response: { groups: [] } }), null);
+});
+
+test('syncQuotasFromLocalDaemon reads hub_*.json and fetches RetrieveUserQuotaSummary from mock daemon', async () => {
+  const httpMod = await import('node:http');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-daemon-'));
+  const expectedCsrf = 'test-csrf-token-123';
+  let receivedPath = '';
+  let receivedCsrf = '';
+
+  const mockDaemon = httpMod.default.createServer((req, res) => {
+    receivedPath = req.url;
+    receivedCsrf = req.headers['x-codeium-csrf-token'];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        response: {
+          groups: [
+            {
+              displayName: 'Gemini Models',
+              buckets: [
+                { window: '5h', remainingFraction: 0.6, resetTime: '2026-11-26T22:00:00Z' },
+                { window: 'weekly', remainingFraction: 0.9, resetTime: '2026-12-03T00:00:00Z' },
+              ],
+            },
+          ],
+        },
+      })
+    );
+  });
+
+  await new Promise((resolve) => mockDaemon.listen(0, '127.0.0.1', resolve));
+  const { port } = mockDaemon.address();
+
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, `hub_${port}.json`),
+      JSON.stringify({ pid: process.pid, httpPort: port, csrfToken: expectedCsrf }),
+      'utf8'
+    );
+
+    const res = await syncQuotasFromLocalDaemon({ force: true, daemonDir: tmpDir, persist: false });
+    assert.equal(res.ok, true);
+    assert.equal(receivedPath, '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary');
+    assert.equal(receivedCsrf, expectedCsrf);
+    assert.equal(res.officialQuotas.source, 'ide-daemon');
+    assert.equal(res.officialQuotas.fiveHour.percent, 40);
+    assert.equal(res.officialQuotas.weekly.percent, 10);
+  } finally {
+    await new Promise((resolve) => mockDaemon.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
