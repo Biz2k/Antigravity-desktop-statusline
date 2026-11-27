@@ -30,6 +30,9 @@ import {
   parseDaemonPlan,
   syncQuotasFromLocalDaemon,
   ensureLoaderAttached,
+  compareSemver,
+  checkGitHubUpdate,
+  applyGitHubUpdate,
   createHttpServer,
 } from '../server.mjs';
 
@@ -781,6 +784,73 @@ test('ensureLoaderAttached self-heals app.asar after updates (standalone and fea
     const res4 = ensureLoaderAttached({ asarPath, loaderFile, lockFile, force: true });
     assert.equal(res4.action, 'locked');
   } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('compareSemver compares versions accurately', () => {
+  assert.equal(compareSemver('v1.5.0', '1.4.1'), 1);
+  assert.equal(compareSemver('1.4.1', 'v1.4.1'), 0);
+  assert.equal(compareSemver('1.4.0', '1.4.1'), -1);
+  assert.equal(compareSemver('2.0.0', '1.9.9'), 1);
+});
+
+test('checkGitHubUpdate and applyGitHubUpdate verify and atomically install release files while preserving config.json', async () => {
+  const http = await import('node:http');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-upd-'));
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, '{"lang":"ru","autoUpdate":true}\n', 'utf8');
+
+  const mockFiles = {
+    'package.json': JSON.stringify({ name: 'antigravity-desktop-statusline', version: '9.9.9' }),
+    'widget.js': '(() => { console.log("v9.9.9"); })();\n',
+  };
+
+  const mockServer = http.createServer((req, res) => {
+    if (req.url === '/releases/latest') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ tag_name: 'v9.9.9', html_url: 'https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v9.9.9' }));
+      return;
+    }
+    const rel = String(req.url || '').replace(/^\/raw\//, '');
+    if (mockFiles[rel]) {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(mockFiles[rel]);
+      return;
+    }
+    res.writeHead(404);
+    res.end('Not found');
+  });
+
+  await new Promise((resolve) => mockServer.listen(0, '127.0.0.1', resolve));
+  const { port } = mockServer.address();
+
+  try {
+    const chk = await checkGitHubUpdate({
+      apiUrl: `http://127.0.0.1:${port}/releases/latest`,
+      currentVersion: '1.4.1',
+    });
+    assert.equal(chk.ok, true);
+    assert.equal(chk.update.latestVersion, '9.9.9');
+    assert.equal(chk.update.updateAvailable, true);
+
+    const applied = await applyGitHubUpdate({
+      apiUrl: `http://127.0.0.1:${port}/releases/latest`,
+      rawBaseUrl: `http://127.0.0.1:${port}/raw`,
+      currentVersion: '1.4.1',
+      targetDir: tmpDir,
+      files: ['package.json', 'widget.js'],
+      skipHeal: true,
+    });
+    assert.equal(applied.ok, true);
+    assert.equal(applied.updated, true);
+    assert.equal(applied.update.needsRestart, true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(tmpDir, 'package.json'), 'utf8')).version, '9.9.9');
+    assert.equal(fs.readFileSync(path.join(tmpDir, 'widget.js'), 'utf8'), mockFiles['widget.js']);
+    // User config preserved untouched
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"lang":"ru","autoUpdate":true}\n');
+  } finally {
+    await new Promise((resolve) => mockServer.close(resolve));
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

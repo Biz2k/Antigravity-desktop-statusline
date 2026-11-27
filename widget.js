@@ -50,6 +50,16 @@
       visCache: 'Cache',
       visModel: 'Model',
       visPlan: 'Plan',
+      autoUpdate: 'Auto-update',
+      onLabel: 'On',
+      offLabel: 'Off',
+      updateCheck: (v) => `Check updates (v${v})`,
+      updateNow: (v) => `Update to v${v}`,
+      updating: 'Updating…',
+      checking: 'Checking…',
+      upToDate: (v) => `Up to date (v${v})`,
+      updatedRestart: (v) => `Updated to v${v} · restart`,
+      updateAvailTip: (v) => `Update available: v${v}`,
       resetThresholds: 'Reset thresholds',
       compactHintTip: 'Run /compact in chat to compress context',
       compactDraftTip: 'Copied /compact (input is not empty)',
@@ -102,6 +112,16 @@
       visCache: 'Cache',
       visModel: 'Modell',
       visPlan: 'Abo',
+      autoUpdate: 'Auto-Update',
+      onLabel: 'Ein',
+      offLabel: 'Aus',
+      updateCheck: (v) => `Nach Updates suchen (v${v})`,
+      updateNow: (v) => `Auf v${v} aktualisieren`,
+      updating: 'Aktualisiere…',
+      checking: 'Prüfe…',
+      upToDate: (v) => `Aktuell (v${v})`,
+      updatedRestart: (v) => `v${v} installiert · Neustart`,
+      updateAvailTip: (v) => `Update verfügbar: v${v}`,
       resetThresholds: 'Schwellen zurücksetzen',
       compactHintTip: '/compact im Chat senden, um den Kontext zu komprimieren',
       compactDraftTip: '/compact kopiert (Eingabefeld nicht leer)',
@@ -154,6 +174,16 @@
       visCache: 'Cache',
       visModel: 'Modèle',
       visPlan: 'Offre',
+      autoUpdate: 'Màj auto',
+      onLabel: 'Oui',
+      offLabel: 'Non',
+      updateCheck: (v) => `Vérifier les màj (v${v})`,
+      updateNow: (v) => `Mettre à jour v${v}`,
+      updating: 'Mise à jour…',
+      checking: 'Vérification…',
+      upToDate: (v) => `À jour (v${v})`,
+      updatedRestart: (v) => `v${v} installée · redémarrer`,
+      updateAvailTip: (v) => `Mise à jour disponible : v${v}`,
       resetThresholds: 'Réinitialiser les seuils',
       compactHintTip: 'Envoyer /compact dans le chat pour compresser le contexte',
       compactDraftTip: '/compact copié (champ de saisie non vide)',
@@ -206,6 +236,16 @@
       visCache: '缓存',
       visModel: '模型',
       visPlan: '套餐',
+      autoUpdate: '自动更新',
+      onLabel: '开',
+      offLabel: '关',
+      updateCheck: (v) => `检查更新 (v${v})`,
+      updateNow: (v) => `更新到 v${v}`,
+      updating: '正在更新…',
+      checking: '检查中…',
+      upToDate: (v) => `已是最新 (v${v})`,
+      updatedRestart: (v) => `已更新至 v${v} · 请重启`,
+      updateAvailTip: (v) => `发现新版本: v${v}`,
       resetThresholds: '重置阈值',
       compactHintTip: '点击向聊天发送 /compact 以压缩上下文',
       compactDraftTip: '已复制 /compact（输入框非空）',
@@ -258,6 +298,16 @@
       visCache: 'Кеш',
       visModel: 'Модель',
       visPlan: 'Подписка',
+      autoUpdate: 'Автообновление',
+      onLabel: 'Вкл',
+      offLabel: 'Выкл',
+      updateCheck: (v) => `Проверить обновления (v${v})`,
+      updateNow: (v) => `Обновить до v${v}`,
+      updating: 'Обновление…',
+      checking: 'Проверка…',
+      upToDate: (v) => `Актуальная версия (v${v})`,
+      updatedRestart: (v) => `Обновлено до v${v} · перезапуск`,
+      updateAvailTip: (v) => `Доступно обновление: v${v}`,
       resetThresholds: 'Сбросить пороги',
       compactHintTip: 'Отправить /compact в чат для сжатия контекста',
       compactDraftTip: 'Скопировано /compact (поле ввода не пустое)',
@@ -310,6 +360,16 @@
       visCache: 'Кеш',
       visModel: 'Модель',
       visPlan: 'Підписка',
+      autoUpdate: 'Автооновлення',
+      onLabel: 'Увімк',
+      offLabel: 'Вимк',
+      updateCheck: (v) => `Перевірити оновлення (v${v})`,
+      updateNow: (v) => `Оновити до v${v}`,
+      updating: 'Оновлення…',
+      checking: 'Перевірка…',
+      upToDate: (v) => `Актуальна версія (v${v})`,
+      updatedRestart: (v) => `Оновлено до v${v} · перезапуск`,
+      updateAvailTip: (v) => `Доступне оновлення: v${v}`,
       resetThresholds: 'Скинути пороги',
       compactHintTip: 'Надіслати /compact у чат для стиснення контексту',
       compactDraftTip: 'Скопійовано /compact (поле введення не порожнє)',
@@ -537,11 +597,15 @@
       opacity: 0.25;
       transition: opacity 0.15s ease;
     }
+    .agy-sl-actions.has-update {
+      opacity: 0.92;
+    }
     .agy-sl-card:hover .agy-sl-actions,
     .agy-sl-card.has-popover .agy-sl-actions {
       opacity: 1;
     }
     .agy-sl-icon-btn {
+      position: relative;
       background: transparent;
       border: none;
       color: var(--muted-foreground, #9aa0a6);
@@ -556,6 +620,17 @@
       padding: 0;
       font-family: inherit;
       transition: background-color 0.12s ease, color 0.12s ease;
+    }
+    .agy-sl-icon-btn.has-update::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 1.5px var(--card, #121316), 0 0 6px rgba(34, 197, 94, 0.75);
     }
     .agy-sl-icon-btn:hover {
       background: var(--secondary, rgba(128, 128, 128, 0.18));
@@ -696,6 +771,69 @@
     .agy-sl-pop-btn:hover {
       background: rgba(78, 142, 247, 0.22);
       border-color: rgba(78, 142, 247, 0.5);
+    }
+    .agy-sl-pop-btn:disabled {
+      opacity: 0.65;
+      cursor: default;
+    }
+    .agy-sl-pop-btn.is-update {
+      background: #22c55e;
+      border-color: #22c55e;
+      color: #08150d;
+      font-weight: 600;
+    }
+    .agy-sl-pop-btn.is-update:hover:not(:disabled) {
+      background: #16a34a;
+      border-color: #16a34a;
+    }
+    .agy-sl-pop-btn.is-updated {
+      background: rgba(34, 197, 94, 0.16);
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #4ade80;
+    }
+    .agy-sl-upd-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border, rgba(128, 128, 128, 0.18));
+    }
+    .agy-sl-switch-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10.5px;
+      color: var(--muted-foreground, #9aa0a6);
+    }
+    .agy-sl-switch {
+      position: relative;
+      width: 30px;
+      height: 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+      background: rgba(128, 128, 128, 0.28);
+      padding: 0;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+      flex-shrink: 0;
+    }
+    .agy-sl-switch::after {
+      content: '';
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ffffff;
+      transition: transform 0.15s ease;
+    }
+    .agy-sl-switch.is-on {
+      background: #22c55e;
+      border-color: #22c55e;
+    }
+    .agy-sl-switch.is-on::after {
+      transform: translateX(14px);
     }
     .agy-sl-vis-section {
       display: flex;
@@ -1165,6 +1303,27 @@
     const showPlanBadge = cfg.showPlanBadge !== false;
     const showFiveHour = cfg.showFiveHour !== false;
     const showWeekly = cfg.showWeekly !== false;
+    const autoUpdate = cfg.autoUpdate !== false;
+    const upd = data.update || {};
+    const curVer = upd.currentVersion || data.version || '';
+    const latestVer = upd.latestVersion || curVer;
+    const isUpdBusy = upd.status === 'checking' || upd.status === 'updating';
+    const updBtnLabel = upd.status === 'updating'
+      ? s.updating
+      : upd.status === 'checking'
+        ? s.checking
+        : upd.needsRestart
+          ? s.updatedRestart(latestVer)
+          : upd.updateAvailable
+            ? s.updateNow(latestVer)
+            : upd.checkedAt
+              ? s.upToDate(curVer)
+              : s.updateCheck(curVer);
+    const updBtnCls = upd.updateAvailable
+      ? ' is-update'
+      : upd.needsRestart
+        ? ' is-updated'
+        : '';
     const visItems = [
       { key: 'showFirstRow', on: showFirstRow, label: s.context },
       { key: 'showCompacts', on: showCompacts, label: s.visCompacts },
@@ -1231,8 +1390,17 @@
           <input class="agy-sl-pop-input" id="agy-sl-t-wk-w" type="text" inputmode="numeric" value="${th.weekly.warn}" />
           <input class="agy-sl-pop-input" id="agy-sl-t-wk-d" type="text" inputmode="numeric" value="${th.weekly.danger}" />
         </div>
-        <div class="agy-sl-pop-row">
-          <button class="agy-sl-pop-btn" style="width:100%" id="agy-sl-reset-thresh">${escapeHtml(s.resetThresholds)}</button>
+        <div class="agy-sl-upd-section">
+          <div class="agy-sl-pop-row">
+            <span>${escapeHtml(s.autoUpdate)}</span>
+            <span class="agy-sl-switch-wrap">
+              <span>${escapeHtml(autoUpdate ? s.onLabel : s.offLabel)}</span>
+              <button type="button" class="agy-sl-switch ${autoUpdate ? 'is-on' : ''}" id="agy-sl-toggle-autoupd" role="switch" aria-checked="${autoUpdate ? 'true' : 'false'}"></button>
+            </span>
+          </div>
+          <div class="agy-sl-pop-row">
+            <button type="button" class="agy-sl-pop-btn${updBtnCls}" style="width:100%" id="agy-sl-update-btn"${isUpdBusy ? ' disabled' : ''}>${escapeHtml(updBtnLabel)}</button>
+          </div>
         </div>
         <div class="agy-sl-pop-note">${escapeHtml(statusNote)}</div>
       </div>
@@ -1269,11 +1437,34 @@
       };
     });
 
-    const resetThreshBtn = popHost.querySelector('#agy-sl-reset-thresh');
-    if (resetThreshBtn) {
-      resetThreshBtn.onclick = async (e) => {
+    const toggleAutoUpdBtn = popHost.querySelector('#agy-sl-toggle-autoupd');
+    if (toggleAutoUpdBtn) {
+      toggleAutoUpdBtn.onclick = async (e) => {
         e.stopPropagation();
-        await postConfig({ thresholds: DEFAULT_THRESHOLDS }, true);
+        await postConfig({ autoUpdate: !autoUpdate }, true);
+      };
+    }
+
+    const updateBtn = popHost.querySelector('#agy-sl-update-btn');
+    if (updateBtn) {
+      updateBtn.onclick = async (e) => {
+        e.stopPropagation();
+        if (updateBtn.disabled) return;
+        updateBtn.disabled = true;
+        const shouldApply = !!(upd && upd.updateAvailable);
+        updateBtn.textContent = shouldApply ? s.updating : s.checking;
+        try {
+          const endpoint = shouldApply ? '/api/update-apply' : '/api/update-check';
+          const resp = await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
+          if (resp.ok && !shouldApply) {
+            const body = await resp.json();
+            if (body && body.update && body.update.updateAvailable) {
+              updateBtn.textContent = s.updating;
+              await fetch(`${API_BASE}/api/update-apply`, { method: 'POST' });
+            }
+          }
+        } catch {}
+        await fetchStatusAndRender(true);
       };
     }
 
@@ -1809,6 +2000,19 @@
       setTextIfChanged(weekDetEl, weekReset);
       const nextDisp = weekReset ? '' : 'none';
       if (weekDetEl.style.display !== nextDisp) weekDetEl.style.display = nextDisp;
+    }
+
+    const updInfo = data.update || null;
+    const hasUpdateBadge = !!(updInfo && (updInfo.updateAvailable || updInfo.needsRestart));
+    const actionsEl = rowsHost.querySelector('.agy-sl-actions');
+    if (actionsEl) actionsEl.classList.toggle('has-update', hasUpdateBadge);
+    const settingsBtnEl = rowsHost.querySelector('#agy-sl-settings');
+    if (settingsBtnEl) {
+      settingsBtnEl.classList.toggle('has-update', hasUpdateBadge);
+      const nextTitle = hasUpdateBadge && updInfo.latestVersion
+        ? `${s.settings} · ${updInfo.needsRestart ? s.updatedRestart(updInfo.latestVersion) : s.updateAvailTip(updInfo.latestVersion)}`
+        : s.settings;
+      setAttrIfChanged(settingsBtnEl, 'title', nextTitle);
     }
 
     observeCardResize(card);

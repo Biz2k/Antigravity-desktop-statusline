@@ -2,7 +2,7 @@
 
 🌐 [🇬🇧 English](README.md) | [🇷🇺 Русский](README.ru.md) | **🇺🇦 Українська**
 
-[![Version](https://img.shields.io/badge/version-v1.4.1-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.4.1)
+[![Version](https://img.shields.io/badge/version-v1.5.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.5.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -57,6 +57,7 @@
 | `showPlanBadge` | `true` | Показувати або приховувати бейдж підписки (`Pro`, `Ultra`, `Free`) |
 | `showFiveHour` | `true` | Показувати або приховувати індикатор `5 годин` |
 | `showWeekly` | `true` | Показувати або приховувати індикатор `Тиждень` |
+| `autoUpdate` | `true` | Автоматично перевіряти та встановлювати нові релізи з GitHub |
 | `thresholds` | `80/95`, кеш `50/20` | Пороги зміни кольору (жовтий / червоний, %) для `context`, `cache` (`<`), `fiveHour` і `weekly` |
 
 ---

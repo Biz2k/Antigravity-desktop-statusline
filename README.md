@@ -2,7 +2,7 @@
 
 🌐 **🇬🇧 English** | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.ua.md)
 
-[![Version](https://img.shields.io/badge/version-v1.4.1-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.4.1)
+[![Version](https://img.shields.io/badge/version-v1.5.0-2f7de1.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline/releases/tag/v1.5.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](https://github.com/Biz2k/Antigravity-desktop-statusline)
 [![Target](https://img.shields.io/badge/Google%20AntiGravity-2.0%2B-orange.svg)](https://antigravity.google)
@@ -57,6 +57,7 @@ All preferences are saved automatically to `~/.antigravity-statusline/config.jso
 | `showPlanBadge` | `true` | Show or hide the subscription plan badge (`Pro`, `Ultra`, `Free`) |
 | `showFiveHour` | `true` | Show or hide the `5 hours` limit meter |
 | `showWeekly` | `true` | Show or hide the `Weekly` limit meter |
+| `autoUpdate` | `true` | Automatically download and apply new GitHub releases in the background |
 | `thresholds` | `80/95`, cache `50/20` | Per-metric Yellow/Red color thresholds (%) for `context`, `cache` (`<`), `fiveHour`, and `weekly` |
 
 ---

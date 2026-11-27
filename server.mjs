@@ -36,6 +36,16 @@ const LOADER_FILE = path.join(__dirname, 'loader.js');
 const LOG_FILE = path.join(__dirname, 'statusline.log');
 const FEATURES_V2_DIR = path.join(USER_HOME, '.antigravity-features-v2');
 const FEATURES_V2_BUNDLE = path.join(FEATURES_V2_DIR, 'localization_injected.js');
+const GITHUB_REPO = 'Biz2k/Antigravity-desktop-statusline';
+const UPDATE_FILES = [
+  'package.json',
+  'server.mjs',
+  'widget.js',
+  'loader.js',
+  'asar-patcher.cjs',
+  'install.cjs',
+  'uninstall.cjs',
+];
 
 const SUPPORTED_LANGS = ['en', 'de', 'fr', 'zh', 'ru', 'uk'];
 
@@ -58,6 +68,7 @@ const DEFAULT_CONFIG = {
   showCompactBtn: true,
   showFiveHour: true,
   showWeekly: true,
+  autoUpdate: true,
   fiveHourBudgetTokens: 1_500_000,
   weeklyBudgetTokens: 15_000_000,
   thresholds: DEFAULT_THRESHOLDS,
@@ -695,6 +706,7 @@ function collectAllMetrics(requestedConvId) {
     subagents: { activeCount: activeSubagentCount },
     localUsage,
     officialQuotas,
+    update: getUpdateInfo(),
     config: {
       enabled: cfg.enabled !== false,
       lang: SUPPORTED_LANGS.includes(cfg.lang) ? cfg.lang : 'en',
@@ -707,6 +719,7 @@ function collectAllMetrics(requestedConvId) {
       showCompactBtn: cfg.showCompactBtn !== false,
       showFiveHour: cfg.showFiveHour !== false,
       showWeekly: cfg.showWeekly !== false,
+      autoUpdate: cfg.autoUpdate !== false,
       thresholds: sanitizeThresholds(cfg.thresholds),
     },
   };
@@ -1197,6 +1210,203 @@ function ensureLoaderAttached(opts = {}) {
   }
 }
 
+function compareSemver(a, b) {
+  const parse = (v) =>
+    String(v || '')
+      .trim()
+      .replace(/^v/i, '')
+      .split('-')[0]
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length, 3);
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da > db) return 1;
+    if (da < db) return -1;
+  }
+  return 0;
+}
+
+const updateState = {
+  currentVersion: APP_VERSION,
+  latestVersion: null,
+  latestTag: null,
+  updateAvailable: false,
+  releaseUrl: null,
+  checkedAt: null,
+  status: 'idle', // idle | checking | updating | updated | error
+  needsRestart: false,
+  error: null,
+};
+
+let updateCheckInFlight = null;
+let updateApplyInFlight = null;
+
+function getUpdateInfo() {
+  return { ...updateState };
+}
+
+function fetchUrlText(urlStr, timeoutMs = 10_000, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(urlStr);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    const mod = parsed.protocol === 'http:' ? http : https;
+    const req = mod.get(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
+        path: parsed.pathname + parsed.search,
+        headers: {
+          'User-Agent': `antigravity-desktop-statusline/${APP_VERSION}`,
+          Accept: 'application/vnd.github+json, text/plain, */*',
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        if (
+          res.statusCode &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location &&
+          redirectsLeft > 0
+        ) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, urlStr).toString();
+          fetchUrlText(nextUrl, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 2 * 1024 * 1024) {
+            req.destroy(new Error('Response too large'));
+          }
+        });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(body);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`));
+          }
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Request timeout')));
+    req.on('error', reject);
+  });
+}
+
+async function checkGitHubUpdate(opts = {}) {
+  if (updateCheckInFlight) return updateCheckInFlight;
+  const run = async () => {
+    const apiUrl = opts.apiUrl || `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+    const currentVer = opts.currentVersion || APP_VERSION;
+    const prevStatus = updateState.status;
+    updateState.status = 'checking';
+    updateState.error = null;
+    try {
+      const raw = await fetchUrlText(apiUrl, opts.timeoutMs || 10_000);
+      const data = JSON.parse(raw);
+      const tag = String(data.tag_name || '').trim();
+      const latest = tag.replace(/^v/i, '');
+      if (!latest) throw new Error('Missing tag_name');
+      const available = compareSemver(latest, currentVer) > 0 && !updateState.needsRestart;
+      updateState.currentVersion = currentVer;
+      updateState.latestTag = tag;
+      updateState.latestVersion = latest;
+      updateState.updateAvailable = available;
+      updateState.releaseUrl = data.html_url || `https://github.com/${GITHUB_REPO}/releases/tag/${tag}`;
+      updateState.checkedAt = new Date().toISOString();
+      updateState.status = updateState.needsRestart ? 'updated' : 'idle';
+      updateState.error = null;
+      return { ok: true, update: getUpdateInfo() };
+    } catch (err) {
+      updateState.status = prevStatus === 'updated' ? 'updated' : 'error';
+      updateState.error = err.message;
+      updateState.checkedAt = new Date().toISOString();
+      log(`checkGitHubUpdate error: ${err.message}`);
+      return { ok: false, error: err.message, update: getUpdateInfo() };
+    }
+  };
+  updateCheckInFlight = run().finally(() => {
+    updateCheckInFlight = null;
+  });
+  return updateCheckInFlight;
+}
+
+async function applyGitHubUpdate(opts = {}) {
+  if (updateApplyInFlight) return updateApplyInFlight;
+  const run = async () => {
+    const checkRes = await checkGitHubUpdate(opts);
+    if (!checkRes.ok) return { ok: false, updated: false, error: checkRes.error, update: getUpdateInfo() };
+    if (!updateState.updateAvailable && !opts.force) {
+      return { ok: true, updated: false, update: getUpdateInfo() };
+    }
+
+    const tag = updateState.latestTag || `v${updateState.latestVersion}`;
+    const rawBase = (opts.rawBaseUrl || `https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}`).replace(/\/+$/, '');
+    const targetDir = opts.targetDir || __dirname;
+    const files = opts.files || UPDATE_FILES;
+
+    updateState.status = 'updating';
+    updateState.error = null;
+    const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-update-'));
+
+    try {
+      const downloaded = new Map();
+      for (const rel of files) {
+        const content = await fetchUrlText(`${rawBase}/${rel}`, opts.timeoutMs || 15_000);
+        if (!content || content.length < 10) {
+          throw new Error(`Empty download for ${rel}`);
+        }
+        const stagePath = path.join(stagingDir, rel);
+        fs.writeFileSync(stagePath, content, 'utf8');
+        if (rel.endsWith('.json')) {
+          JSON.parse(content);
+        } else if (rel.endsWith('.js') || rel.endsWith('.mjs') || rel.endsWith('.cjs')) {
+          execSync(`"${process.execPath}" --check "${stagePath}"`, { stdio: 'ignore', windowsHide: true });
+        }
+        downloaded.set(rel, content);
+      }
+
+      for (const [rel, content] of downloaded.entries()) {
+        writeFileAtomic(path.join(targetDir, rel), content);
+      }
+
+      if (!opts.skipHeal) {
+        ensureLoaderAttached({ force: true });
+      }
+
+      updateState.updateAvailable = false;
+      updateState.needsRestart = true;
+      updateState.status = 'updated';
+      updateState.error = null;
+      log(`Updated statusline files to ${tag} in ${targetDir}`);
+      return { ok: true, updated: true, update: getUpdateInfo() };
+    } catch (err) {
+      updateState.status = 'error';
+      updateState.error = err.message;
+      log(`applyGitHubUpdate error: ${err.message}`);
+      return { ok: false, updated: false, error: err.message, update: getUpdateInfo() };
+    } finally {
+      try { fs.rmSync(stagingDir, { recursive: true, force: true }); } catch {}
+    }
+  };
+  updateApplyInFlight = run().finally(() => {
+    updateApplyInFlight = null;
+  });
+  return updateApplyInFlight;
+}
+
 function readRequestBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -1429,6 +1639,32 @@ function createHttpServer() {
       return;
     }
 
+    if (pathname === '/api/update-check' && req.method === 'POST') {
+      try {
+        const result = await checkGitHubUpdate({ force: true });
+        broadcastNow();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: err.message, update: getUpdateInfo() }));
+      }
+      return;
+    }
+
+    if (pathname === '/api/update-apply' && req.method === 'POST') {
+      try {
+        const result = await applyGitHubUpdate();
+        broadcastNow();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, updated: false, error: err.message, update: getUpdateInfo() }));
+      }
+      return;
+    }
+
     if (pathname === '/api/quota-sync' && req.method === 'POST') {
       try {
         const raw = await readRequestBody(req);
@@ -1516,6 +1752,22 @@ function startHttpServer(port = PORT, host = HOST) {
     };
     setTimeout(() => runDaemonSync(true), 1500).unref();
     setInterval(() => runDaemonSync(false), 90_000).unref();
+
+    // Background GitHub release check + optional auto-update (every 6h)
+    const runUpdateCycle = async () => {
+      try {
+        const res = await checkGitHubUpdate();
+        if (res && res.ok && res.update && res.update.updateAvailable) {
+          if (typeof server.broadcastNow === 'function') server.broadcastNow();
+          if (getConfig().autoUpdate !== false) {
+            await applyGitHubUpdate();
+            if (typeof server.broadcastNow === 'function') server.broadcastNow();
+          }
+        }
+      } catch {}
+    };
+    setTimeout(runUpdateCycle, 15_000).unref();
+    setInterval(runUpdateCycle, 6 * 3600_000).unref();
   });
 
   return server;
@@ -1689,6 +1941,10 @@ export {
   parseDaemonPlan,
   syncQuotasFromLocalDaemon,
   ensureLoaderAttached,
+  compareSemver,
+  getUpdateInfo,
+  checkGitHubUpdate,
+  applyGitHubUpdate,
   createHttpServer,
   startHttpServer,
   startMcpStdio,
