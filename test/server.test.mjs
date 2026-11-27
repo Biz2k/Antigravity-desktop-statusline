@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const asarPatcher = require('../asar-patcher.cjs');
 
 import {
   APP_VERSION,
@@ -25,6 +29,7 @@ import {
   parseDaemonQuotaSummary,
   parseDaemonPlan,
   syncQuotasFromLocalDaemon,
+  ensureLoaderAttached,
   createHttpServer,
 } from '../server.mjs';
 
@@ -698,6 +703,84 @@ test('syncQuotasFromLocalDaemon reads hub_*.json and fetches RetrieveUserQuotaSu
     assert.equal('email' in res.plan, false);
   } finally {
     await new Promise((resolve) => mockDaemon.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('ensureLoaderAttached self-heals app.asar after updates (standalone and features-v2) and respects uninstalling.lock', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sl-heal-'));
+  const asarPath = path.join(tmpDir, 'app.asar');
+  const fv2Dir = path.join(tmpDir, 'fv2');
+  const fv2Bundle = path.join(fv2Dir, 'localization_injected.js');
+  const lockFile = path.join(tmpDir, 'uninstalling.lock');
+  const loaderFile = path.join(__dirname, '..', 'loader.js');
+
+  try {
+    // 1. Standalone mode: unpatched app.asar gets healed automatically
+    asarPatcher.buildSyntheticAsar(
+      {
+        'dist/preload.js': 'console.log("clean updated preload");\n',
+        'package.json': '{"name":"antigravity"}\n',
+      },
+      asarPath
+    );
+    const res1 = ensureLoaderAttached({
+      asarPath,
+      featuresV2Dir: '',
+      featuresV2Bundle: '',
+      loaderFile,
+      lockFile,
+      force: true,
+    });
+    assert.equal(res1.action, 'healed_asar');
+    assert.equal(res1.healedAsar, true);
+    assert.ok(asarPatcher.isAsarPatched(asarPath));
+
+    // Second check on already-patched app.asar is a clean no-op
+    const res2 = ensureLoaderAttached({
+      asarPath,
+      featuresV2Dir: '',
+      featuresV2Bundle: '',
+      loaderFile,
+      lockFile,
+      force: true,
+    });
+    assert.equal(res2.action, 'ok');
+    assert.equal(res2.healedAsar, false);
+
+    // 2. features-v2 mode: clean app.asar + clean localization_injected.js -> re-attaches bundle AND heals app.asar
+    fs.mkdirSync(fv2Dir, { recursive: true });
+    fs.writeFileSync(fv2Bundle, 'console.log("fresh fv2");\n', 'utf8');
+    asarPatcher.buildSyntheticAsar(
+      { 'dist/preload.js': 'console.log("fv2 patched without statusline");\n' },
+      asarPath
+    );
+    let autoPatcherCalled = false;
+    const res3 = ensureLoaderAttached({
+      asarPath,
+      featuresV2Dir: fv2Dir,
+      featuresV2Bundle: fv2Bundle,
+      loaderFile,
+      lockFile,
+      force: true,
+      runAutoPatcher: () => {
+        autoPatcherCalled = true;
+        // Simulate auto_patcher.cjs packing localization_injected.js into app.asar
+        const injected = fs.readFileSync(fv2Bundle, 'utf8');
+        asarPatcher.buildSyntheticAsar({ 'dist/preload.js': injected }, asarPath);
+      },
+    });
+    assert.equal(autoPatcherCalled, true);
+    assert.equal(res3.reattachedBundle, true);
+    assert.equal(res3.healedAsar, true);
+    assert.ok(fs.readFileSync(fv2Bundle, 'utf8').includes('ANTIGRAVITY_STATUSLINE_LOADER_V1'));
+    assert.ok(asarPatcher.readFileFromAsar(asarPath, 'dist/preload.js').toString('utf8').includes('ANTIGRAVITY_STATUSLINE_LOADER_V1'));
+
+    // 3. Respects uninstalling.lock
+    fs.writeFileSync(lockFile, '1', 'utf8');
+    const res4 = ensureLoaderAttached({ asarPath, loaderFile, lockFile, force: true });
+    assert.equal(res4.action, 'locked');
+  } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

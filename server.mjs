@@ -6,10 +6,13 @@ import https from 'https';
 import crypto from 'crypto';
 import readline from 'readline';
 import { execSync } from 'child_process';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
+const asarPatcher = require('./asar-patcher.cjs');
 
 const APP_VERSION = (() => {
   try {
@@ -1048,33 +1051,149 @@ async function syncQuotasFromLocalDaemon({ force = false, daemonDir = DAEMON_DIR
   return daemonSyncInFlight;
 }
 
-// Self-healing loader guard: keeps our tiny loader attached inside antigravity-features-v2/localization_injected.js
-// even after upstream GitHub auto-updates of antigravity-features-v2.
-function ensureLoaderAttached() {
+// Self-healing loader guard: keeps our loader attached inside both
+// antigravity-features-v2/localization_injected.js and AntiGravity's app.asar
+// even after AntiGravity Desktop or antigravity-features-v2 auto-updates.
+let lastCheckedAsarSig = '';
+let lastCheckedBundleSig = '';
+let lastAsarHealFailedAt = 0;
+
+function asarHasStatuslineLoader(asarPath) {
   try {
-    const uninstallLock = path.join(__dirname, 'uninstalling.lock');
-    if (fs.existsSync(uninstallLock)) return;
-    if (!fs.existsSync(FEATURES_V2_BUNDLE) || !fs.existsSync(LOADER_FILE)) return;
+    const preloadText = asarPatcher.readFileFromAsar(asarPath, asarPatcher.PRELOAD_REL_PATH).toString('utf8');
+    return (
+      preloadText.includes('ANTIGRAVITY_STATUSLINE_LOADER_V1') ||
+      preloadText.includes(asarPatcher.HOOK_MARKER)
+    );
+  } catch {
+    return false;
+  }
+}
 
-    const current = fs.readFileSync(FEATURES_V2_BUNDLE, 'utf8');
-    if (current.includes('ANTIGRAVITY_STATUSLINE_LOADER_V1')) return;
+function ensureLoaderAttached(opts = {}) {
+  try {
+    const lockFile = opts.lockFile || path.join(__dirname, 'uninstalling.lock');
+    if (fs.existsSync(lockFile)) return { action: 'locked' };
 
-    const loaderSnippet = fs.readFileSync(LOADER_FILE, 'utf8').trim();
-    const eol = current.includes('\r\n') ? '\r\n' : '\n';
-    const patched = current.trimEnd() + eol + eol + loaderSnippet.replace(/\r?\n/g, eol) + eol;
+    const loaderFile = opts.loaderFile || LOADER_FILE;
+    if (!fs.existsSync(loaderFile)) return { action: 'no_loader' };
 
-    const tmpFile = path.join(os.tmpdir(), `agy-sl-check-${process.pid}.js`);
-    fs.writeFileSync(tmpFile, patched, 'utf8');
-    try {
-      execSync(`"${process.execPath}" --check "${tmpFile}"`, { stdio: 'ignore', windowsHide: true });
-    } finally {
-      try { fs.unlinkSync(tmpFile); } catch {}
+    const fv2Dir = opts.featuresV2Dir !== undefined ? opts.featuresV2Dir : FEATURES_V2_DIR;
+    const fv2Bundle = opts.featuresV2Bundle !== undefined ? opts.featuresV2Bundle : FEATURES_V2_BUNDLE;
+    const hasFv2 = !!(fv2Bundle && fs.existsSync(fv2Bundle));
+    const asarPath = opts.asarPath !== undefined ? opts.asarPath : asarPatcher.findAntigravityAsar();
+    const force = !!opts.force;
+
+    let bundleSig = '';
+    if (hasFv2) {
+      try {
+        const st = fs.statSync(fv2Bundle);
+        bundleSig = `${st.mtimeMs}:${st.size}`;
+      } catch {}
     }
 
-    writeFileAtomic(FEATURES_V2_BUNDLE, patched);
-    log('Re-attached ANTIGRAVITY_STATUSLINE_LOADER_V1 into localization_injected.js');
+    let asarSig = '';
+    if (asarPath && fs.existsSync(asarPath)) {
+      try {
+        const st = fs.statSync(asarPath);
+        asarSig = `${st.mtimeMs}:${st.size}`;
+      } catch {}
+    }
+
+    // Fast path: nothing changed since last verified healthy check
+    if (!force && !opts.asarPath && !opts.featuresV2Bundle && asarSig === lastCheckedAsarSig && bundleSig === lastCheckedBundleSig) {
+      return { action: 'unchanged' };
+    }
+
+    let reattachedBundle = false;
+    if (hasFv2) {
+      const current = fs.readFileSync(fv2Bundle, 'utf8');
+      if (!current.includes('ANTIGRAVITY_STATUSLINE_LOADER_V1')) {
+        const loaderSnippet = fs.readFileSync(loaderFile, 'utf8').trim();
+        const eol = current.includes('\r\n') ? '\r\n' : '\n';
+        const patched = current.trimEnd() + eol + eol + loaderSnippet.replace(/\r?\n/g, eol) + eol;
+
+        const tmpFile = path.join(os.tmpdir(), `agy-sl-check-${process.pid}.js`);
+        fs.writeFileSync(tmpFile, patched, 'utf8');
+        try {
+          execSync(`"${process.execPath}" --check "${tmpFile}"`, { stdio: 'ignore', windowsHide: true });
+        } finally {
+          try { fs.unlinkSync(tmpFile); } catch {}
+        }
+
+        writeFileAtomic(fv2Bundle, patched);
+        reattachedBundle = true;
+        log('Re-attached ANTIGRAVITY_STATUSLINE_LOADER_V1 into localization_injected.js');
+      }
+    }
+
+    let healedAsar = false;
+    if (asarPath && fs.existsSync(asarPath)) {
+      if (!asarHasStatuslineLoader(asarPath)) {
+        const now = Date.now();
+        if (!force && lastAsarHealFailedAt && now - lastAsarHealFailedAt < 5 * 60_000 && asarSig === lastCheckedAsarSig) {
+          return { action: 'cooldown', reattachedBundle };
+        }
+
+        try {
+          if (hasFv2) {
+            const autoPatcher = path.join(fv2Dir, 'auto_patcher.cjs');
+            if (typeof opts.runAutoPatcher === 'function') {
+              opts.runAutoPatcher(autoPatcher, fv2Dir);
+            } else if (fs.existsSync(autoPatcher)) {
+              execSync(`"${process.execPath}" "${autoPatcher}" --once`, {
+                cwd: fv2Dir,
+                stdio: 'ignore',
+                windowsHide: true,
+                timeout: 30_000,
+              });
+            }
+          }
+
+          if (asarHasStatuslineLoader(asarPath)) {
+            healedAsar = true;
+            log('Self-healed app.asar via antigravity-features-v2 auto_patcher.cjs');
+          } else {
+            const patchFn = opts.patchAsarFn || asarPatcher.patchAsar;
+            patchFn(asarPath);
+            healedAsar = true;
+            log(`Self-healed app.asar directly (standalone hook): ${asarPath}`);
+          }
+          lastAsarHealFailedAt = 0;
+        } catch (err) {
+          lastAsarHealFailedAt = Date.now();
+          log(`Self-heal app.asar failed: ${err.message}`);
+        }
+      }
+    }
+
+    if (!opts.asarPath && !opts.featuresV2Bundle) {
+      if (hasFv2) {
+        try {
+          const st = fs.statSync(fv2Bundle);
+          lastCheckedBundleSig = `${st.mtimeMs}:${st.size}`;
+        } catch {}
+      } else {
+        lastCheckedBundleSig = '';
+      }
+      if (asarPath && fs.existsSync(asarPath)) {
+        try {
+          const st = fs.statSync(asarPath);
+          lastCheckedAsarSig = `${st.mtimeMs}:${st.size}`;
+        } catch {}
+      } else {
+        lastCheckedAsarSig = '';
+      }
+    }
+
+    return {
+      action: healedAsar ? 'healed_asar' : (reattachedBundle ? 'reattached_bundle' : 'ok'),
+      reattachedBundle,
+      healedAsar,
+    };
   } catch (err) {
     log(`ensureLoaderAttached error: ${err.message}`);
+    return { action: 'error', error: err.message };
   }
 }
 
@@ -1569,6 +1688,7 @@ export {
   parseDaemonQuotaSummary,
   parseDaemonPlan,
   syncQuotasFromLocalDaemon,
+  ensureLoaderAttached,
   createHttpServer,
   startHttpServer,
   startMcpStdio,
